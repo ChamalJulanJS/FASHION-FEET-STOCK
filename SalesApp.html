@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0B0F19">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Sales Dashboard - FashionFeet</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0B0F19;
+            --bg-card: #131B2C;
+            --bg-elevated: #1A2438;
+            --text-primary: #FFFFFF;
+            --text-secondary: #8B9BB4;
+            --accent: #2563EB;
+            --accent-hover: #1D4ED8;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --border-light: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(255, 255, 255, 0.15);
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            margin: 0; padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            -webkit-tap-highlight-color: transparent;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(37, 99, 235, 0.08), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.05), transparent 25%);
+            background-attachment: fixed;
+        }
+
+        .header {
+            position: sticky; top: 0; z-index: 100;
+            padding: 20px 24px;
+            background: rgba(11, 15, 25, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-light);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        
+        .header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.5px; }
+        .header .badge {
+            background: rgba(37, 99, 235, 0.15); color: #60A5FA;
+            padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+            border: 1px solid rgba(37, 99, 235, 0.3);
+        }
+        
+        .container { padding: 24px; max-width: 600px; margin: 0 auto; }
+        
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px; border: 1px solid var(--border-light);
+            padding: 24px; margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .input-group { margin-bottom: 20px; }
+        .input-group label { 
+            display: block; font-size: 0.8rem; font-weight: 500; 
+            color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        input[type="date"], select {
+            width: 100%; padding: 14px 16px; border-radius: 12px;
+            border: 1px solid var(--border-light); 
+            background: var(--bg-elevated); color: var(--text-primary);
+            font-size: 1rem; font-family: inherit; font-weight: 500;
+            outline: none; transition: border 0.2s, box-shadow 0.2s;
+            color-scheme: dark;
+        }
+        input[type="date"]:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2); }
+        
+        .filters { display: grid; grid-template-columns: 1fr; gap: 0; }
+        
+        .btn {
+            background: var(--accent); color: white;
+            border: none; padding: 14px; border-radius: 12px;
+            font-size: 0.95rem; font-weight: 600; width: 100%;
+            cursor: pointer; transition: background 0.2s, transform 0.1s;
+            display: flex; justify-content: center; align-items: center; gap: 8px;
+            margin-top: 8px;
+        }
+        .btn:hover { background: var(--accent-hover); }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { background: #334155; color: #94A3B8; cursor: not-allowed; }
+        
+        .revenue-section {
+            text-align: left; padding-bottom: 24px;
+            border-bottom: 1px solid var(--border-light); margin-bottom: 24px;
+            position: relative;
+        }
+        .revenue-label { 
+            font-size: 0.85rem; color: var(--text-secondary); 
+            font-weight: 500; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+        }
+        .amount { 
+            font-size: 2.75rem; font-weight: 700; color: var(--text-primary); 
+            letter-spacing: -1px; display: flex; align-items: baseline; gap: 4px;
+        }
+        .amount span { font-size: 1.25rem; font-weight: 500; color: var(--text-secondary); }
+        
+        .methods-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;
+        }
+        .method-box {
+            background: var(--bg-elevated); padding: 16px;
+            border-radius: 12px; border: 1px solid var(--border-light);
+        }
+        .method-box .m-title { font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;}
+        .method-box .m-val { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); }
+        .method-box .m-icon.cash { color: var(--success); }
+        .method-box .m-icon.card { color: var(--warning); }
+        
+        .section-title {
+            font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); 
+            text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        
+        .branch-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; }
+        .branch-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px; background: var(--bg-elevated); 
+            border-radius: 12px; border: 1px solid transparent; transition: border 0.2s;
+        }
+        .branch-info { display: flex; align-items: center; gap: 12px; }
+        .branch-icon {
+            width: 36px; height: 36px; border-radius: 8px;
+            background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center;
+            color: var(--text-secondary); font-size: 1.2rem;
+        }
+        .branch-name { font-weight: 500; font-size: 0.95rem; }
+        .branch-sales { font-weight: 600; color: var(--text-primary); font-size: 1rem; text-align: right; }
+        
+        .tx-list { display: flex; flex-direction: column; gap: 8px; }
+        .tx-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 16px; background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--border-light);
+        }
+        .tx-item:last-child { border-bottom: none; }
+        .tx-left { display: flex; flex-direction: column; gap: 4px; }
+        .tx-title { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+        .tx-time { font-size: 0.75rem; color: var(--text-secondary); }
+        .tx-right { text-align: right; }
+        .tx-amount { font-weight: 700; font-size: 0.95rem; color: var(--text-primary); }
+        .tx-method { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: var(--bg-elevated); color: var(--text-secondary); font-weight: 600; text-transform: uppercase; margin-top: 4px; display: inline-block; }
+        .method-badge-cash { border: 1px solid rgba(16, 185, 129, 0.3); color: var(--success) !important; background: rgba(16, 185, 129, 0.1) !important; }
+        .method-badge-card { border: 1px solid rgba(245, 158, 11, 0.3); color: var(--warning) !important; background: rgba(245, 158, 11, 0.1) !important; }
+
+        #results { display: none; }
+        
+        .loader { display: none; text-align: center; padding: 40px 0; }
+        .spinner {
+            width: 24px; height: 24px; border: 2px solid var(--border-light);
+            border-top-color: var(--accent); border-radius: 50%;
+            margin: 0 auto 12px; animation: spin 0.8s linear infinite;
+        }
+        .loader-text { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Dashboard</h1>
+        <div class="badge">POS App</div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="filters">
+                <div class="input-group">
+                    <label>Report Date</label>
+                    <input type="date" id="datePicker">
+                </div>
+                <div class="input-group">
+                    <label>Branch / Location</label>
+                    <select id="branchPicker">
+                        <option value="ALL">All Branches</option>
+                        <!-- Dynamic branches loaded here -->
+                    </select>
+                </div>
+            </div>
+            
+            <button class="btn" id="checkBtn" onclick="fetchSales()">
+                🔄 Refresh Data
+            </button>
+            <button class="btn" id="whatsappBtn" onclick="sendWhatsApp()" style="margin-top: 12px; background: #25D366; color: white;">
+                📱 Send WhatsApp Report
+            </button>
+        </div>
+        
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <div class="loader-text">Querying database...</div>
+        </div>
+
+        <div class="card" id="results">
+            <div class="revenue-section" id="revenueSec">
+                <div class="revenue-label">Total Revenue <span id="revSubtitle" style="color:var(--text-secondary); font-weight:400; margin-left:8px;">(All Branches)</span></div>
+                <div class="amount" id="totalAmount"><span>Rs.</span>0.00</div>
+                
+                <div class="methods-grid">
+                    <div class="method-box">
+                        <div class="m-title"><span class="m-icon cash">💵</span> Cash</div>
+                        <div class="m-val" id="cashTotal">0.00</div>
+                    </div>
+                    <div class="method-box">
+                        <div class="m-title"><span class="m-icon card">💳</span> Card</div>
+                        <div class="m-val" id="cardTotal">0.00</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section-title" id="breakdownTitle">
+                <span>Breakdown by Branch</span>
+            </div>
+            <div class="branch-list" id="branchList">
+                <!-- Branch items injected here -->
+            </div>
+
+            <div class="section-title">
+                <span>Recent Transactions</span>
+                <span id="txCount" style="font-size:0.75rem; background:var(--bg-elevated); padding:2px 8px; border-radius:10px;">0</span>
+            </div>
+            <div class="tx-list" id="txList">
+                <!-- Transactions injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const URL = 'https://qrzpsvyqiozhygtoklhv.supabase.co/rest/v1';
+        const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyenBzdnlxaW96aHlndG9rbGh2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1MTY4MSwiZXhwIjoyMDkwMDI3NjgxfQ.UNxy_PaglB-lVmOP6Ngl1jtVrkQNJ2My5-JL_VV-Agk';
+        const HEADERS = {
+            'apikey': KEY,
+            'Authorization': 'Bearer ' + KEY,
+            'Content-Type': 'application/json'
+        };
+
+        document.getElementById('datePicker').valueAsDate = new Date();
+        let locationsMap = {};
+
+        async function fetchLocations() {
+            try {
+                const res = await fetch(`${URL}/locations?select=id,name`, { headers: HEADERS });
+                const data = await res.json();
+                
+                const select = document.getElementById('branchPicker');
+                data.forEach(loc => { 
+                    locationsMap[loc.id] = loc.name; 
+                    const opt = document.createElement('option');
+                    opt.value = loc.id;
+                    opt.textContent = loc.name;
+                    select.appendChild(opt);
+                });
+                
+                // Load sales once on initial load
+                fetchSales();
+            } catch(e) { console.error("Error fetching locations"); }
+        }
+        
+        fetchLocations();
+
+        function formatTime(isoString) {
+            const d = new Date(isoString);
+            return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        async function fetchSales() {
+            const dateVal = document.getElementById('datePicker').value;
+            const branchVal = document.getElementById('branchPicker').value;
+            
+            if (!dateVal) return;
+
+            const btn = document.getElementById('checkBtn');
+            const loader = document.getElementById('loader');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            btn.innerHTML = "<div class='spinner' style='width:16px;height:16px;margin:0;border-width:2px;border-top-color:#fff;'></div> Updating...";
+            
+            // Only hide results if this is the first time we load
+            if (results.style.display === 'none') {
+                loader.style.display = 'block';
+            }
+
+            try {
+                if(Object.keys(locationsMap).length === 0) return; // Wait for locations
+
+                const startOfDay = `${dateVal}T00:00:00`;
+                const endOfDay = `${dateVal}T23:59:59`;
+                
+                let queryUrl = `${URL}/sales?created_at=gte.${startOfDay}&created_at=lte.${endOfDay}&select=id,invoice_no,created_at,total,location_id,status,payment_method&order=created_at.desc`;
+                
+                if (branchVal !== 'ALL') {
+                    queryUrl += `&location_id=eq.${branchVal}`;
+                    document.getElementById('revSubtitle').innerText = `(${locationsMap[branchVal]})`;
+                    document.getElementById('breakdownTitle').style.display = 'none';
+                } else {
+                    document.getElementById('revSubtitle').innerText = `(All Branches)`;
+                    document.getElementById('breakdownTitle').style.display = 'flex';
+                }
+
+                const res = await fetch(queryUrl, { headers: HEADERS });
+                
+                if (!res.ok) throw new Error("Failed to fetch data");
+                
+                const sales = await res.json();
+                let total = 0;
+                let cashTotal = 0;
+                let cardTotal = 0;
+                let branchTotals = {};
+                let txHtml = '';
+                let validCount = 0;
+
+                sales.forEach(inv => {
+                    if(inv.status && inv.status === 'cancelled') return;
+                    validCount++;
+                    
+                    const amount = parseFloat(inv.total) || 0;
+                    total += amount;
+                    
+                    const method = (inv.payment_method || '').toLowerCase();
+                    let methodClass = '';
+                    if(method.includes('card')) {
+                        cardTotal += amount;
+                        methodClass = 'method-badge-card';
+                    } else if(method.includes('cash')) {
+                        cashTotal += amount;
+                        methodClass = 'method-badge-cash';
+                    }
+                    
+                    const locId = inv.location_id;
+                    if(locId) branchTotals[locId] = (branchTotals[locId] || 0) + amount;
+                    
+                    const invNo = inv.invoice_no ? `#${inv.invoice_no}` : 'N/A';
+                    const timeStr = formatTime(inv.created_at);
+                    const formattedAmt = amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    
+                    txHtml += `
+                        <div class="tx-item">
+                            <div class="tx-left">
+                                <div class="tx-title">Invoice ${invNo}</div>
+                                <div class="tx-time">${timeStr} ${branchVal === 'ALL' && locId ? '• ' + (locationsMap[locId]||'') : ''}</div>
+                            </div>
+                            <div class="tx-right">
+                                <div class="tx-amount">Rs. ${formattedAmt}</div>
+                                <div class="tx-method ${methodClass}">${inv.payment_method || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                document.getElementById('totalAmount').innerHTML = `<span>Rs.</span>${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                
+                document.getElementById('cashTotal').innerText = `Rs. ${cashTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                document.getElementById('cardTotal').innerText = `Rs. ${cardTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                
+                let branchHtml = '';
+                if(validCount === 0) {
+                    branchHtml = '<div style="text-align:center; color:var(--text-secondary); font-size:0.9rem; padding:20px;">No transactions found.</div>';
+                    txHtml = '<div style="text-align:center; color:var(--text-secondary); font-size:0.9rem; padding:20px;">No transactions yet.</div>';
+                } else if (branchVal === 'ALL') {
+                    for(let locId in branchTotals) {
+                        const locName = locationsMap[locId] || 'Unknown Branch';
+                        const amt = branchTotals[locId].toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                        branchHtml += `
+                            <div class="branch-item">
+                                <div class="branch-info">
+                                    <div class="branch-icon">🏬</div>
+                                    <div class="branch-name">${locName}</div>
+                                </div>
+                                <div class="branch-sales">Rs. ${amt}</div>
+                            </div>
+                        `;
+                    }
+                }
+                
+                const branchListEl = document.getElementById('branchList');
+                if (branchVal !== 'ALL') {
+                    branchListEl.style.display = 'none';
+                } else {
+                    branchListEl.style.display = 'flex';
+                    branchListEl.innerHTML = branchHtml;
+                }
+
+                document.getElementById('txCount').innerText = validCount;
+                document.getElementById('txList').innerHTML = txHtml;
+                
+                loader.style.display = 'none';
+                results.style.display = 'block';
+                
+            } catch (error) {
+                alert('Error: ' + error.message);
+                loader.style.display = 'none';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = "🔄 Refresh Data";
+            }
+        }
+
+        function sendWhatsApp() {
+            const date = document.getElementById('datePicker').value;
+            const branch = document.getElementById('branchPicker').options[document.getElementById('branchPicker').selectedIndex].text;
+            const total = document.getElementById('totalAmount').innerText;
+            const cash = document.getElementById('cashTotal').innerText;
+            const card = document.getElementById('cardTotal').innerText;
+
+            let msg = `*Daily Sales Report* 📊\n\n📅 Date: ${date}\n📍 Branch: ${branch}\n\n💰 Total Revenue: Rs.${total}\n💵 Cash: Rs.${cash}\n💳 Card: Rs.${card}`;
+            
+            // +94742251715 replaces 0742251715. Make sure the number format is correct (include country code without + or 00).
+            let targetNumber = "94742251715"; // Ask user to confirm
+            
+            let encodedMsg = encodeURIComponent(msg);
+            window.open(`https://wa.me/${targetNumber}?text=${encodedMsg}`, '_blank');
+        }
+    </script>
+</body>
+</html>

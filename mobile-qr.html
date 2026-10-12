@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fashionfeet Mobile App — Scan QR to Connect</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: #0B101D;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            text-align: center;
+        }
+        .card {
+            background: rgba(19, 28, 49, 0.85);
+            border: 1px solid rgba(110, 86, 255, 0.4);
+            padding: 3rem 2.5rem;
+            border-radius: 24px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        }
+        .logo { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .logo span { color: #6E56FF; }
+        .subtitle { color: #94A3B8; font-size: 0.95rem; margin-bottom: 2rem; }
+        .qr-box {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 2rem;
+            box-shadow: 0 0 30px rgba(110, 86, 255, 0.3);
+        }
+        .qr-box img { width: 240px; height: 240px; display: block; }
+        .url-tag {
+            font-family: 'JetBrains Mono', monospace;
+            background: #0B101D;
+            border: 1px solid #334155;
+            color: #22C55E;
+            padding: 0.85rem 1.25rem;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+            display: inline-block;
+            letter-spacing: 0.5px;
+        }
+        .steps { text-align: left; background: rgba(0,0,0,0.3); padding: 1.25rem; border-radius: 12px; font-size: 0.9rem; color: #CBD5E1; line-height: 1.6; }
+        .steps strong { color: #818CF8; }
+        .back-link { display: inline-block; margin-top: 1.5rem; color: #94A3B8; text-decoration: none; font-size: 0.9rem; }
+        .back-link:hover { color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">FASHION<span>FEET</span> MOBILE</div>
+        <p class="subtitle">Scan this QR code with your phone camera or Expo Go app</p>
+
+        <div class="qr-box">
+            <!-- Uses QuickChart API to generate clean QR for exp://10.38.203.190:8081 -->
+            <img src="https://quickchart.io/qr?text=exp%3A%2F%2F10.38.203.190%3A8081&size=300&margin=1&dark=0B101D&light=ffffff" alt="Expo QR Code">
+        </div>
+
+        <div>
+            <div class="url-tag">exp://10.38.203.190:8081</div>
+        </div>
+
+        <div class="steps">
+            <p><strong>Step 1:</strong> Connect your mobile phone to the same Wi-Fi network.</p>
+            <p><strong>Step 2:</strong> Open the <strong>Expo Go</strong> app on your Android/iPhone.</p>
+            <p><strong>Step 3:</strong> Tap <strong>"Scan QR Code"</strong> or <strong>"Enter URL manually"</strong> and type the green code above!</p>
+        </div>
+
+        <a href="index.html" class="back-link">← Back to Web Transfer Hub</a>
+    </div>
+</body>
+</html>

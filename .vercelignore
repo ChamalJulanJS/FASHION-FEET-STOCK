@@ -1,0 +1,12 @@
+node_modules
+pos_src
+app_extracted
+*.xlsx
+*.csv
+test*.*
+inspect*.*
+patch*.*
+import*.*
+.next
+out
+.git

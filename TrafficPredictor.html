@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Analytics Dashboard - FashionFeet</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <style>
+        :root {
+            --bg-base: #030712; --bg-panel: #111827; --bg-elevated: #1F2937;
+            --text-main: #F9FAFB; --text-muted: #9CA3AF;
+            --accent-primary: #3B82F6; --accent-secondary: #8B5CF6;
+            --success: #10B981; --danger: #EF4444; --warning: #F59E0B;
+            --border: rgba(255,255,255,0.08);
+        }
+        
+        body {
+            margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-base); color: var(--text-main);
+            background-image: 
+                radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+            background-attachment: fixed; min-height: 100vh;
+        }
+
+        .navbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 32px; background: rgba(3, 7, 18, 0.8);
+            backdrop-filter: blur(20px); border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 50;
+        }
+        .nav-brand { font-size: 1.3rem; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+        .nav-brand span { background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .status-pill {
+            background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2);
+            color: var(--warning); padding: 6px 14px; border-radius: 30px;
+            font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 8px;
+        }
+        .pulse-dot { width: 8px; height: 8px; background: var(--warning); border-radius: 50%; box-shadow: 0 0 8px var(--warning); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+
+        .container { padding: 32px; max-width: 1400px; margin: 0 auto; }
+        
+        .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 30px; flex-wrap: wrap; gap: 16px; }
+        .header-text h2 { margin: 0 0 8px; font-size: 1.8rem; font-weight: 700; letter-spacing: -1px; }
+        .header-text p { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
+        
+        .controls-group { display: flex; gap: 16px; }
+        .info-box, .date-picker-box {
+            background: var(--bg-panel); border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 12px 20px; border-radius: 12px; display: flex; align-items: center; gap: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .info-box { border-color: rgba(255, 255, 255, 0.1); }
+        .date-picker-box label, .info-box label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;}
+        .date-picker-box label { color: var(--accent-primary); }
+        .date-picker-box input {
+            background: var(--bg-elevated); border: 1px solid var(--border);
+            color: var(--text-main); padding: 10px 14px; border-radius: 8px;
+            font-family: inherit; font-size: 1rem; font-weight: 600; outline: none;
+            color-scheme: dark; cursor: pointer; transition: 0.2s;
+        }
+
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px; margin-bottom: 24px;
+        }
+        .metric-card {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 16px; padding: 20px; position: relative; overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2); display: flex; flex-direction: column; justify-content: center;
+        }
+        .metric-card.highlight-card { border-color: rgba(59, 130, 246, 0.3); background: linear-gradient(180deg, rgba(59, 130, 246, 0.05), var(--bg-panel)); }
+        .metric-title { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;}
+        .metric-value { font-size: 2rem; font-weight: 800; color: var(--text-main); letter-spacing: -1px; display: flex; align-items: baseline; gap: 6px;}
+        .metric-value span { font-size: 0.9rem; font-weight: 500; color: var(--text-muted); }
+        
+        .progress-container { margin-top: 12px; }
+        .progress-label { font-size: 0.8rem; display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--text-muted); }
+        .progress-track { background: var(--bg-elevated); height: 8px; border-radius: 4px; overflow: hidden; position: relative;}
+        .progress-fill { background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary)); height: 100%; width: 0%; border-radius: 4px; transition: width 1s ease-out; }
+        .progress-marker { position: absolute; height: 100%; width: 2px; background: var(--warning); top: 0; z-index: 10;}
+
+        .split-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 12px; }
+        .split-cash { background: var(--success); width: 50%; }
+        .split-card { background: var(--accent-primary); width: 50%; }
+        .split-labels { display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 600; margin-top: 6px; }
+        
+        .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+        @media (max-width: 992px) { .charts-grid { grid-template-columns: 1fr; } }
+        
+        .main-panel {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 16px; padding: 24px; box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+        }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .panel-title { font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 8px;}
+        .chart-wrapper { position: relative; height: 300px; width: 100%; }
+
+        .product-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+        .product-item {
+            background: var(--bg-elevated); padding: 12px 16px; border-radius: 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .product-name { font-weight: 600; color: var(--text-main); font-size: 0.95rem;}
+        .product-qty { background: rgba(59, 130, 246, 0.2); color: var(--accent-primary); padding: 4px 10px; border-radius: 20px; font-weight: 700; font-size: 0.85rem;}
+
+        .ai-insight {
+            background: linear-gradient(145deg, rgba(31, 41, 55, 0.6), rgba(17, 24, 39, 0.8));
+            border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 16px; padding: 24px;
+            display: flex; gap: 16px; align-items: flex-start; margin-bottom: 24px;
+        }
+        .ai-icon {
+            width: 44px; height: 44px; border-radius: 12px; background: rgba(245, 158, 11, 0.1);
+            display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+            border: 1px solid rgba(245, 158, 11, 0.2); flex-shrink: 0;
+        }
+        .ai-text h3 { margin: 0 0 6px; font-size: 0.95rem; color: var(--warning); text-transform: uppercase; letter-spacing: 0.5px;}
+        .ai-text p { margin: 0; font-size: 1rem; line-height: 1.6; color: rgba(255,255,255,0.9); font-weight: 400; }
+
+        .loader-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-base); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.5s;
+        }
+        .tf-logo { width: 60px; height: 60px; margin-bottom: 20px; animation: bounce 2s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        
+        .loading-text { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; color: var(--warning); }
+        .loading-subtext { color: var(--text-muted); font-size: 0.9rem; }
+        .progress-bar { width: 300px; height: 6px; background: var(--bg-elevated); border-radius: 10px; overflow: hidden; margin-top: 15px; }
+        .progress-fill-loader { height: 100%; background: var(--warning); width: 0%; transition: width 0.1s; box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+        
+        .hl-blue { color: var(--accent-primary); font-weight: 700; }
+        .hl-green { color: var(--success); font-weight: 700; }
+        .hl-warn { color: var(--warning); font-weight: 700; }
+    </style>
+</head>
+<body>
+
+    <div class="loader-overlay" id="loader">
+        <svg class="tf-logo" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        <div class="loading-text">TensorFlow AI Engine</div>
+        <div class="loading-subtext" id="loadStatus">Initializing Advanced ML Model...</div>
+        <div class="progress-bar"><div class="progress-fill-loader" id="progressFill"></div></div>
+    </div>
+
+    <nav class="navbar">
+        <div class="nav-brand">🧠 <span>Intelligence Center</span></div>
+        <div class="status-pill"><div class="pulse-dot"></div> TensorFlow.js Active</div>
+    </nav>
+
+    <div class="container" style="display:none;" id="dashboard">
+        <div class="page-header">
+            <div class="header-text">
+                <h2 id="pageTitle">Shoe Gallery Business Forecast</h2>
+                <p>Advanced AI modeling for revenue, product trends, and real-time adjustments.</p>
+            </div>
+            <div class="controls-group">
+                <div class="info-box">
+                    <input type="checkbox" id="promoToggle" onchange="runForecastForDate()" style="cursor:pointer; width:16px; height:16px; accent-color: var(--warning);">
+                    <label for="promoToggle" style="cursor: pointer; color: var(--warning);">🏷️ Active Promo</label>
+                </div>
+                <div class="info-box">
+                    <label>☁️ Weather</label>
+                    <div style="font-weight: 700; font-size: 1.1rem; display: flex; gap: 8px; align-items: center;" id="weatherBox">--°C</div>
+                </div>
+                <div class="date-picker-box">
+                    <label for="forecastDate">📅 Forecast Date:</label>
+                    <input type="date" id="forecastDate" onchange="runForecastForDate()">
+                </div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card highlight-card">
+                <div class="metric-title">💰 Predicted Revenue</div>
+                <div class="metric-value" id="predRev"><span>Rs.</span>0.00</div>
+                <div class="progress-container">
+                    <div class="progress-label"><span>Target Progress</span> <span id="targetPct">0%</span></div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="targetFill"></div>
+                        <div class="progress-marker" style="left: 100%;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="metric-card highlight-card">
+                <div class="metric-title">👥 Expected Customers</div>
+                <div class="metric-value" id="predCust">0 <span>Invoices</span></div>
+                <div class="metric-title" style="margin-top: 15px; margin-bottom: 2px;">Payment Split Prediction</div>
+                <div class="split-bar">
+                    <div class="split-cash" id="barCash"></div>
+                    <div class="split-card" id="barCard"></div>
+                </div>
+                <div class="split-labels">
+                    <span style="color: var(--success);" id="lblCash">Cash 0%</span>
+                    <span style="color: var(--accent-primary);" id="lblCard">Card 0%</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>📅 Monthly Forecast</span>
+                    <input type="month" id="monthPicker" onchange="updateMonthlyMetrics()" style="background:var(--bg-elevated); border:1px solid rgba(255,255,255,0.2); color:var(--text-main); border-radius:6px; padding:4px 6px; font-size:0.75rem; cursor:pointer; outline:none; font-family:inherit;">
+                </div>
+                <div class="metric-value" id="monthlyRev" style="font-size: 1.6rem;"><span>Rs.</span>0.00</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">Actuals + Projected</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">📊 Daily Average (Month)</div>
+                <div class="metric-value" id="monthlyAvg" style="font-size: 1.6rem;"><span>Rs.</span>0.00</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">Based on 30 days</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">📈 Avg. Order Value</div>
+                <div class="metric-value" id="avgOrder" style="font-size: 1.6rem;"><span>Rs.</span>0.00</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">🔥 Peak Traffic Hour</div>
+                <div class="metric-value" id="peakHourVal" style="font-size: 1.6rem;">--:--</div>
+            </div>
+        </div>
+
+        <div class="ai-insight">
+            <div class="ai-icon">⚡</div>
+            <div class="ai-text">
+                <h3>TensorFlow Deep Analysis</h3>
+                <p id="aiSummary">Processing data...</p>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="main-panel">
+                <div class="panel-header">
+                    <div class="panel-title">👥 AI Predicted Traffic Density Curve</div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="trafficCurve"></canvas>
+                </div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 24px;">
+                <div class="main-panel" style="flex: 1;">
+                    <div class="panel-header" style="margin-bottom: 10px;">
+                        <div class="panel-title">🛒 Predicted Top Products</div>
+                    </div>
+                    <div class="product-list" id="productList">
+                        <div class="product-item"><span class="product-name">Loading...</span><span class="product-qty">--</span></div>
+                    </div>
+                </div>
+                <div class="main-panel" style="flex: 1;">
+                    <div class="panel-header" style="margin-bottom: 10px;">
+                        <div class="panel-title">💰 Cumulative Revenue</div>
+                    </div>
+                    <div class="chart-wrapper" style="height: 140px;">
+                        <canvas id="revenueCurve"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-panel" style="margin-bottom: 24px;">
+            <div class="panel-header">
+                <div class="panel-title">📅 7-Day Revenue & Weather Forecast</div>
+            </div>
+            <div class="chart-wrapper" style="height: 250px;">
+                <canvas id="weeklyCurve"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const URL = 'https://qrzpsvyqiozhygtoklhv.supabase.co/rest/v1';
+        const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyenBzdnlxaW96aHlndG9rbGh2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1MTY4MSwiZXhwIjoyMDkwMDI3NjgxfQ.UNxy_PaglB-lVmOP6Ngl1jtVrkQNJ2My5-JL_VV-Agk';
+        const HEADERS = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+        
+        const DAILY_TARGET_REV = 50000; // Custom daily target
+
+        let cachedSales = [];
+        let tfModel = null;
+        let chart1 = null;
+        let chart2 = null;
+        
+        let weatherData = { isRainy: false, desc: "Clear", temp: 28, emoji: "☀️", daily: null };
+
+        function getSLDate(dateObj) {
+            return new Date(dateObj.toLocaleString("en-US", {timeZone: "Asia/Colombo"}));
+        }
+        
+        const SL_HOLIDAYS_2026 = new Set([
+            '2026-08-28', '2026-09-17', '2026-09-26', '2026-10-25', '2026-10-31', 
+            '2026-11-08', '2026-11-23', '2026-12-23', '2026-12-25'
+        ]);
+        
+        function isSriLankanHoliday(d) {
+            const dateStr = d.toISOString().split('T')[0];
+            return SL_HOLIDAYS_2026.has(dateStr) ? 1 : 0;
+        }
+
+        function isPayday(d) { const date = d.getDate(); return (date >= 24 || date <= 5) ? 1 : 0; }
+        function isWeekend(d) { const day = d.getDay(); return (day === 0 || day === 6) ? 1 : 0; }
+
+        async function fetchWeather() {
+            try {
+                const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=6.9271&longitude=79.8612&current=temperature_2m,weather_code&daily=weather_code,precipitation_sum&timezone=Asia%2FColombo`);
+                const data = await res.json();
+                let code = data.current.weather_code;
+                weatherData.temp = Math.round(data.current.temperature_2m);
+                if (code > 50) { weatherData.isRainy = true; weatherData.desc = "Rainy"; weatherData.emoji = "🌧️"; }
+                else if (code > 2) { weatherData.isRainy = false; weatherData.desc = "Cloudy"; weatherData.emoji = "☁️"; }
+                
+                weatherData.daily = data.daily;
+                
+                document.getElementById('weatherBox').innerHTML = `${weatherData.emoji} ${weatherData.temp}°C`;
+            } catch(e) { console.log("Weather fetch failed", e); }
+        }
+
+        async function initApp() {
+            const slNow = getSLDate(new Date());
+            document.getElementById('forecastDate').value = slNow.toISOString().split('T')[0];
+
+            const statusText = document.getElementById('loadStatus');
+            const progress = document.getElementById('progressFill');
+            
+            try {
+                fetchWeather(); // Parallel
+                
+                progress.style.width = '20%';
+                statusText.innerText = "Extracting deep historical data & products...";
+                
+                const pastDate = new Date(slNow);
+                pastDate.setDate(slNow.getDate() - 365); // Upgraded from 180 to 365 days
+                const startStr = pastDate.toISOString();
+                const endStr = slNow.toISOString();
+                
+                // Deep join to fetch products and payment methods
+                const res = await fetch(`${URL}/sales?created_at=gte.${startStr}&created_at=lte.${endStr}&location_id=eq.b9730905-c070-4ee8-960e-74d2fef1592b&select=id,created_at,total,status,payment_method,sale_items(quantity,product_variants(sku))`, { headers: HEADERS });
+                if(!res.ok) throw new Error("Data fetch failed");
+                cachedSales = await res.json();
+                
+                progress.style.width = '50%';
+                statusText.innerText = "Engineering advanced features for TensorFlow...";
+
+                let trafficMap = {}; 
+                let maxTrafficPerHour = 0;
+                
+                cachedSales.forEach(sale => {
+                    if (sale.status === 'cancelled') return;
+                    const d = getSLDate(new Date(sale.created_at));
+                    const hour = d.getHours();
+                    const dateStr = getLocalYMD(d);
+                    
+                    if(hour >= 8 && hour <= 21) {
+                        const key = `${dateStr}-${hour}`;
+                        trafficMap[key] = (trafficMap[key] || 0) + 1;
+                        if(trafficMap[key] > maxTrafficPerHour) maxTrafficPerHour = trafficMap[key];
+                    }
+                });
+                
+                if (maxTrafficPerHour === 0) maxTrafficPerHour = 1;
+
+                progress.style.width = '70%';
+                statusText.innerText = "Compiling Deep Learning Model...";
+
+                const xsData = [];
+                const ysData = [];
+
+                for(let i=0; i<365; i++) {
+                    let simD = new Date(slNow);
+                    simD.setDate(slNow.getDate() - i);
+                    let day = simD.getDay();
+                    let wk = isWeekend(simD);
+                    let pd = isPayday(simD);
+                    let hol = isSriLankanHoliday(simD);
+                    let dom = simD.getDate() / 31;
+                    let moy = (simD.getMonth() + 1) / 12;
+                    let simDateStr = getLocalYMD(simD);
+                    
+                    for(let hour=8; hour<=21; hour++) {
+                        let key = `${simDateStr}-${hour}`;
+                        let count = trafficMap[key] || 0;
+                        xsData.push([day/6, (hour-8)/13, wk, pd, hol, dom, moy]);
+                        ysData.push([count / maxTrafficPerHour]);
+                    }
+                }
+
+                if (xsData.length === 0) { xsData.push([0,0,0,0,0,0,0]); ysData.push([0]); }
+                const xsTensor = tf.tensor2d(xsData);
+                const ysTensor = tf.tensor2d(ysData);
+
+                tfModel = tf.sequential();
+                // Upgraded deep dense network with 7 features and Regularization
+                tfModel.add(tf.layers.dense({units: 32, activation: 'relu', inputShape: [7], kernelRegularizer: tf.regularizers.l2({l2: 0.001})}));
+                tfModel.add(tf.layers.dropout({rate: 0.2}));
+                tfModel.add(tf.layers.dense({units: 32, activation: 'relu', kernelRegularizer: tf.regularizers.l2({l2: 0.001})}));
+                tfModel.add(tf.layers.dense({units: 1, activation: 'sigmoid'})); 
+                
+                tfModel.compile({optimizer: tf.train.adam(0.002), loss: 'meanSquaredError'});
+                
+                progress.style.width = '90%';
+                statusText.innerText = "Training Neural Network (Epochs)...";
+
+                await tfModel.fit(xsTensor, ysTensor, { 
+                    epochs: 40, 
+                    batchSize: 64,
+                    yieldEvery: 'epoch'
+                });
+                xsTensor.dispose(); ysTensor.dispose();
+
+                progress.style.width = '100%';
+                
+                setTimeout(() => {
+                    const loader = document.getElementById('loader');
+                    loader.style.opacity = '0';
+                    document.getElementById('dashboard').style.display = 'block';
+                    setTimeout(() => loader.style.display = 'none', 500);
+                    runForecastForDate();
+                }, 800);
+                
+                // 5-Second Live Refresh Engine
+                setInterval(async () => {
+                    try {
+                        let slTime = getSLDate(new Date());
+                        let past24 = new Date(slTime);
+                        past24.setHours(past24.getHours() - 24);
+                        const fetchStart = past24.toISOString();
+                        
+                        const pollRes = await fetch(`${URL}/sales?created_at=gte.${fetchStart}&location_id=eq.b9730905-c070-4ee8-960e-74d2fef1592b&select=id,created_at,total,status,payment_method,sale_items(quantity,product_variants(sku))`, { headers: HEADERS });
+                        if (pollRes.ok) {
+                            const newSales = await pollRes.json();
+                            let updated = false;
+                            newSales.forEach(ns => {
+                                let existingIdx = cachedSales.findIndex(cs => cs.id === ns.id);
+                                if (existingIdx !== -1) {
+                                    if (cachedSales[existingIdx].status !== ns.status || cachedSales[existingIdx].total !== ns.total) {
+                                        cachedSales[existingIdx] = ns;
+                                        updated = true;
+                                    }
+                                } else {
+                                    cachedSales.push(ns);
+                                    updated = true;
+                                }
+                            });
+                            if (updated) runForecastForDate();
+                        }
+                    } catch (err) {
+                        console.error("Live sync failed", err);
+                    }
+                }, 5000);
+
+            } catch (e) {
+                statusText.innerText = "Fatal Error: " + e.message;
+                statusText.style.color = "var(--danger)";
+            }
+        }
+
+        function getLocalYMD(dateObj) {
+            return `${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,'0')}-${String(dateObj.getDate()).padStart(2,'0')}`;
+        }
+
+        function runForecastForDate() {
+            const dateInput = document.getElementById('forecastDate').value;
+            if(!dateInput) return;
+            
+            const targetDate = new Date(dateInput);
+            const targetDay = targetDate.getDay();
+            const targetWk = isWeekend(targetDate);
+            const targetPd = isPayday(targetDate);
+            const targetHol = isSriLankanHoliday(targetDate);
+            const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            
+            let totalRevenue30d = 0;
+            let totalCustomers30d = 0;
+            let dayOfWeekCounts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+            let dayOfWeekRevs = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+            let dayOfWeekOccurrences = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+            let activeDates = new Set();
+            
+            let cashSales = 0;
+            let cardSales = 0;
+            
+            let productScores = {};
+
+            let actualCustomersOnTargetDate = 0;
+            let actualRevOnTargetDate = 0;
+            let actualHourlyCounts = new Array(14).fill(0);
+
+            cachedSales.forEach(sale => {
+                if (sale.status === 'cancelled') return;
+                const d = getSLDate(new Date(sale.created_at));
+                const day = d.getDay(); 
+                const amount = parseFloat(sale.total) || 0;
+                const dateStr = getLocalYMD(d);
+                
+                totalRevenue30d += amount;
+                totalCustomers30d++;
+                
+                let method = (sale.payment_method || 'cash').toLowerCase();
+                if (method.includes('card')) cardSales++;
+                else cashSales++;
+                
+                activeDates.add(dateStr);
+                
+                if (dateStr !== dateInput) {
+                    dayOfWeekCounts[day]++;
+                    dayOfWeekRevs[day] += amount;
+                }
+                
+                if (dateStr === dateInput) {
+                    actualCustomersOnTargetDate++;
+                    actualRevOnTargetDate += amount;
+                    let h = d.getHours();
+                    if (h >= 8 && h <= 21) actualHourlyCounts[h - 8]++;
+                }
+                
+                let daysAgo = Math.floor((targetDate - d) / (1000*60*60*24));
+                if (daysAgo >= 0 && daysAgo <= 14 && sale.sale_items) {
+                    sale.sale_items.forEach(item => {
+                        let sku = (item.product_variants && item.product_variants.sku) ? item.product_variants.sku : "Unknown";
+                        if (sku === "Unknown") return;
+                        let qty = item.quantity || 1;
+                        let weight = 1 + (14 - daysAgo) * 0.1;
+                        productScores[sku] = (productScores[sku] || 0) + (qty * weight);
+                    });
+                }
+            });
+            
+            activeDates.forEach(dateStr => {
+                if (dateStr !== dateInput) {
+                    let parts = dateStr.split('-');
+                    let d = new Date(parts[0], parseInt(parts[1])-1, parts[2]);
+                    dayOfWeekOccurrences[d.getDay()]++;
+                }
+            });
+
+            let avgOrderValue = totalCustomers30d > 0 ? (totalRevenue30d / totalCustomers30d) : 0;
+            let expectedCustomers = 0;
+            let expectedRev = 0;
+            let oldExpectedCustomers = 0;
+            let oldExpectedRev = 0;
+            
+            if (dayOfWeekOccurrences[targetDay] > 0 && dayOfWeekCounts[targetDay] > 0) {
+                expectedCustomers = Math.round(dayOfWeekCounts[targetDay] / dayOfWeekOccurrences[targetDay]);
+                expectedRev = dayOfWeekRevs[targetDay] / dayOfWeekOccurrences[targetDay];
+            } else if (totalCustomers30d > 0) {
+                let pastDaysCount = Math.max(1, activeDates.size - (activeDates.has(dateInput) ? 1 : 0));
+                expectedCustomers = Math.round(totalCustomers30d / pastDaysCount);
+                expectedRev = totalRevenue30d / pastDaysCount;
+            }
+            
+            const isPromoActive = document.getElementById('promoToggle').checked;
+            if (isPromoActive) {
+                expectedCustomers = Math.round(expectedCustomers * 1.25);
+                expectedRev = expectedRev * 1.25;
+            }
+            
+            const slNow = getSLDate(new Date());
+            const isToday = (dateInput === getLocalYMD(slNow));
+            if (isToday && weatherData.isRainy) {
+                expectedCustomers = Math.round(expectedCustomers * 0.85); 
+                expectedRev = expectedRev * 0.85;
+            }
+            
+            oldExpectedCustomers = expectedCustomers;
+            oldExpectedRev = expectedRev;
+
+            const labels = [];
+            const rawDensities = [];
+            let sumDensity = 0;
+            
+            const targetDom = targetDate.getDate() / 31;
+            const targetMoy = (targetDate.getMonth() + 1) / 12;
+
+            const predInputs = [];
+            for(let hour=8; hour<=21; hour++) {
+                predInputs.push([targetDay/6, (hour-8)/13, targetWk, targetPd, targetHol, targetDom, targetMoy]);
+                let ampm = hour >= 12 ? 'PM' : 'AM';
+                let h12 = hour % 12; if(h12 === 0) h12 = 12;
+                labels.push(`${h12} ${ampm}`);
+            }
+            
+            const xsTensor = tf.tensor2d(predInputs);
+            const preds = tfModel.predict(xsTensor).dataSync();
+            xsTensor.dispose();
+            
+            let peakDensity = 0; let peakHourStr = "";
+            for(let i=0; i<14; i++) {
+                let smoothedVal = preds[i] + 0.05; // Laplace Smoothing to prevent zero-density collapse
+                rawDensities.push(smoothedVal);
+                sumDensity += smoothedVal;
+                if (smoothedVal > peakDensity) { peakDensity = smoothedVal; peakHourStr = labels[i]; }
+            }
+            
+            if (sumDensity === 0) sumDensity = 1;
+            
+            let liveStatusHtml = "";
+            if (isToday) {
+                let currentHour = slNow.getHours();
+                let pastDensitySum = 0;
+                for(let i=0; i<14; i++) { if ((i + 8) <= currentHour) pastDensitySum += rawDensities[i]; }
+                let timeProgress = pastDensitySum / sumDensity; 
+                
+                if (timeProgress > 0.05 && timeProgress < 0.95) {
+                    let runRateCustomers = actualCustomersOnTargetDate / timeProgress;
+                    let runRateRev = actualRevOnTargetDate / timeProgress;
+                    // Aggressive blending: Trust actual run-rate fully by 25% of the day (e.g. 11 AM)
+                    let blendFactor = Math.min(1.0, timeProgress * 4); 
+                    
+                    expectedCustomers = Math.round((oldExpectedCustomers * (1 - blendFactor)) + (runRateCustomers * blendFactor));
+                    expectedRev = (oldExpectedRev * (1 - blendFactor)) + (runRateRev * blendFactor);
+                    
+                    if (blendFactor > 0.5 && expectedCustomers > oldExpectedCustomers * 1.2) {
+                        liveStatusHtml = `<br><span class="hl-green">🔥 LIVE: Business is booming! Pacing <b>above</b> AI expectations today.</span>`;
+                    } else if (blendFactor > 0.5 && expectedCustomers < oldExpectedCustomers * 0.8) {
+                        liveStatusHtml = `<br><span class="hl-warn">📉 LIVE: Footfall is slower than usual today. Predictions adjusted downwards.</span>`;
+                    } else if (blendFactor > 0.5) {
+                        liveStatusHtml = `<br><span class="hl-blue">⚡ LIVE: Tracking exactly on par with AI expectations.</span>`;
+                    }
+                } else if (timeProgress >= 0.95) {
+                    expectedCustomers = actualCustomersOnTargetDate;
+                    expectedRev = actualRevOnTargetDate;
+                    liveStatusHtml = `<br><span class="hl-blue">🏁 LIVE: Business day is effectively complete.</span>`;
+                }
+            } else if (new Date(dateInput) < slNow) {
+                expectedCustomers = actualCustomersOnTargetDate;
+                expectedRev = actualRevOnTargetDate;
+            }
+            
+            // Last Week Data
+            const lwDate = new Date(targetDate);
+            lwDate.setDate(lwDate.getDate() - 7);
+            const lwDateStr = lwDate.toISOString().split('T')[0];
+            let lwCustomers = 0;
+            let lwRev = 0;
+            let lwHourlyCounts = new Array(14).fill(0);
+            
+            cachedSales.forEach(sale => {
+                if (sale.status === 'cancelled') return;
+                const d = getSLDate(new Date(sale.created_at));
+                if (d.toISOString().split('T')[0] === lwDateStr) {
+                    lwCustomers++;
+                    lwRev += (parseFloat(sale.total) || 0);
+                    let h = d.getHours();
+                    if (h >= 8 && h <= 21) lwHourlyCounts[h - 8]++;
+                }
+            });
+            let lwAvgOrderValue = lwCustomers > 0 ? (lwRev / lwCustomers) : avgOrderValue;
+            
+            let unifiedMaxTraffic = Math.max(
+                ...actualHourlyCounts, 
+                ...lwHourlyCounts, 
+                (oldExpectedCustomers * (Math.max(...rawDensities)/sumDensity))
+            ) || 1;
+
+            const trafficPoints = [];
+            const revenuePoints = [];
+            const baselineTrafficPoints = [];
+            const baselineRevenuePoints = [];
+            const lwTrafficPoints = [];
+            const lwRevenuePoints = [];
+            
+            let cumulativeRev = 0;
+            let baselineCumRev = 0;
+            let lwCumRev = 0;
+            let maxPred = 0;
+            
+            for(let i=0; i<14; i++) {
+                let exactHourCustomers = 0;
+                let isPastHourToday = isToday && ((i + 8) <= slNow.getHours());
+                let isPastDate = new Date(dateInput) < slNow && !isToday;
+                let portion = rawDensities[i] / sumDensity;
+                
+                let baseHourCustomers = oldExpectedCustomers * portion;
+                let baseDensityPercent = Math.round((baseHourCustomers / unifiedMaxTraffic) * 100);
+                baselineTrafficPoints.push(baseDensityPercent);
+                baselineCumRev += (baseHourCustomers * avgOrderValue);
+                baselineRevenuePoints.push(Math.round(baselineCumRev));
+                
+                if (isPastHourToday || isPastDate) exactHourCustomers = actualHourlyCounts[i];
+                else exactHourCustomers = expectedCustomers * portion;
+                
+                let densityPercent = Math.round((exactHourCustomers / unifiedMaxTraffic) * 100);
+                trafficPoints.push(densityPercent);
+                if(densityPercent >= maxPred) { maxPred = densityPercent; peakHourStr = labels[i]; }
+                cumulativeRev += (exactHourCustomers * (isPastHourToday ? (actualRevOnTargetDate/actualCustomersOnTargetDate||avgOrderValue) : avgOrderValue));
+                revenuePoints.push(Math.round(cumulativeRev));
+                
+                let lwDensityPercent = Math.round((lwHourlyCounts[i] / unifiedMaxTraffic) * 100);
+                lwTrafficPoints.push(lwDensityPercent);
+                lwCumRev += (lwHourlyCounts[i] * lwAvgOrderValue);
+                lwRevenuePoints.push(Math.round(lwCumRev));
+            }
+
+            // Top Metrics UI
+            document.getElementById('predRev').innerHTML = `<span>Rs.</span>${expectedRev.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+            document.getElementById('predCust').innerHTML = `${expectedCustomers} <span>Invoices</span>`;
+            document.getElementById('avgOrder').innerHTML = `<span>Rs.</span>${Math.round(avgOrderValue).toLocaleString()}`;
+            document.getElementById('peakHourVal').innerHTML = peakHourStr || "--:--";
+            
+            // Calculate Monthly Forecast Base Data
+            let actualsByDate = {};
+            cachedSales.forEach(s => {
+                if (s.status === 'cancelled') return;
+                let ds = getSLDate(new Date(s.created_at)).toISOString().split('T')[0];
+                actualsByDate[ds] = (actualsByDate[ds] || 0) + (parseFloat(s.total) || 0);
+            });
+
+            window.updateMonthlyMetrics = function() {
+                let mVal = document.getElementById('monthPicker').value;
+                if (!mVal) return;
+                let parts = mVal.split('-');
+                let mTargetYear = parseInt(parts[0]);
+                let mTargetMonth = parseInt(parts[1]) - 1;
+                
+                let daysInMonth = new Date(mTargetYear, mTargetMonth + 1, 0).getDate();
+                let monthlyTotalRev = 0;
+                
+                for(let d=1; d<=daysInMonth; d++) {
+                    let loopDate = new Date(mTargetYear, mTargetMonth, d);
+                    let ds = loopDate.toISOString().split('T')[0];
+                    let dw = loopDate.getDay();
+                    
+                    if (new Date(ds) < slNow && ds !== slNow.toISOString().split('T')[0]) {
+                        monthlyTotalRev += (actualsByDate[ds] || 0);
+                    } else if (ds === slNow.toISOString().split('T')[0] && isToday) {
+                        monthlyTotalRev += expectedRev;
+                    } else {
+                        let dRev = 0;
+                        if (dayOfWeekOccurrences[dw] > 0) dRev = dayOfWeekRevs[dw] / dayOfWeekOccurrences[dw];
+                        else dRev = totalCustomers30d > 0 ? (totalRevenue30d / activeDates.size) : 0;
+                        monthlyTotalRev += dRev;
+                    }
+                }
+                
+                let monthlyAvgDaily = monthlyTotalRev / daysInMonth;
+                document.getElementById('monthlyRev').innerHTML = `<span>Rs.</span>${Math.round(monthlyTotalRev).toLocaleString()}`;
+                document.getElementById('monthlyAvg').innerHTML = `<span>Rs.</span>${Math.round(monthlyAvgDaily).toLocaleString()}`;
+            };
+            
+            // Sync Month Picker with current Target Date
+            let currentMonthVal = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2, '0')}`;
+            document.getElementById('monthPicker').value = currentMonthVal;
+            window.updateMonthlyMetrics();
+
+            // Target Progress
+            let pct = Math.min(100, Math.round((expectedRev / DAILY_TARGET_REV) * 100));
+            document.getElementById('targetPct').innerText = `${pct}% of Rs. ${DAILY_TARGET_REV.toLocaleString()}`;
+            document.getElementById('targetFill').style.width = `${pct}%`;
+
+            // Payment Split (Cash vs Card)
+            let totalSplits = cashSales + cardSales;
+            let pctCash = 50; let pctCard = 50;
+            if (totalSplits > 0) {
+                pctCash = Math.round((cashSales / totalSplits) * 100);
+                pctCard = 100 - pctCash;
+            }
+            document.getElementById('barCash').style.width = `${pctCash}%`;
+            document.getElementById('barCard').style.width = `${pctCard}%`;
+            document.getElementById('lblCash').innerText = `Cash ${pctCash}%`;
+            document.getElementById('lblCard').innerText = `Card ${pctCard}%`;
+
+            // Product Prediction UI
+            let sortedProducts = Object.entries(productScores).sort((a,b) => b[1] - a[1]).slice(0, 3);
+            let phtml = "";
+            if (sortedProducts.length > 0) {
+                sortedProducts.forEach(p => {
+                    let estQty = Math.max(1, Math.round((p[1] / 14) * (expectedCustomers / (totalCustomers30d/30 || 1))));
+                    phtml += `<div class="product-item"><span class="product-name">SKU: ${p[0]}</span><span class="product-qty">Predict ~${estQty} units</span></div>`;
+                });
+            } else { phtml = `<div class="product-item"><span class="product-name">No product data</span></div>`; }
+            document.getElementById('productList').innerHTML = phtml;
+            
+            // AI Context Builder
+            let specialContext = "";
+            if (targetPd) specialContext = " <span class='hl-warn'>Payday Season</span> increases purchasing power.";
+            if (targetWk) specialContext += " <span class='hl-warn'>Weekend dynamics</span> applied.";
+            if (targetHol) specialContext += " <span class='hl-warn'>Public Holiday dynamics</span> applied.";
+            if (isPromoActive) specialContext += " <span class='hl-warn'>Active Promotion</span> boosting baseline traffic.";
+            if (isToday && weatherData.isRainy) specialContext += " <span class='hl-warn'>Rainy weather</span> expected to reduce footfall.";
+
+            document.getElementById('aiSummary').innerHTML = `Forecast for <strong>${daysOfWeek[targetDay]}, ${targetDate.toLocaleDateString()}</strong>: The model predicts <span class="hl-blue">${expectedCustomers} customers</span> generating <span class="hl-green">Rs. ${expectedRev.toLocaleString(undefined, {maximumFractionDigits:0})}</span>.${specialContext} Peak influx is expected around <span class="hl-warn">${peakHourStr || 'N/A'}</span>.${liveStatusHtml}`;
+
+            // 7-Day Forecasting
+            let weeklyLabels = [];
+            let weeklyData = [];
+            let weeklyColors = [];
+            let chartStartStr = targetDate.toISOString().split('T')[0];
+
+            for(let d=0; d<7; d++) {
+                let tempDate = new Date(targetDate);
+                tempDate.setDate(tempDate.getDate() + d);
+                let tDay = tempDate.getDay();
+                let shortDate = tempDate.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'});
+                
+                let dayExpRev = 0;
+                if (d === 0) {
+                    dayExpRev = expectedRev; // Live Sync: Use the real-time AI prediction for the current day
+                } else if (dayOfWeekOccurrences[tDay] > 0) {
+                    dayExpRev = dayOfWeekRevs[tDay] / dayOfWeekOccurrences[tDay];
+                } else {
+                    dayExpRev = totalCustomers30d > 0 ? (totalRevenue30d / activeDates.size) : 0;
+                }
+                
+                // Weather Penalty Application
+                let wCode = 0; let wEmoji = ""; let isWkRain = false;
+                if (weatherData.daily && weatherData.daily.time) {
+                    let dStr = tempDate.toISOString().split('T')[0];
+                    let idx = weatherData.daily.time.indexOf(dStr);
+                    if (idx !== -1) {
+                        wCode = weatherData.daily.weather_code[idx];
+                        if (wCode > 50) isWkRain = true;
+                    }
+                }
+                
+                if (isWkRain) {
+                    if (d > 0) dayExpRev = dayExpRev * 0.85;
+                    wEmoji = " 🌧️";
+                }
+                
+                weeklyLabels.push(shortDate + wEmoji);
+                weeklyData.push(Math.round(dayExpRev));
+                weeklyColors.push(d === 0 ? 'rgba(59, 130, 246, 0.9)' : 'rgba(16, 185, 129, 0.7)');
+            }
+
+            // Draw Charts
+            const ctx1 = document.getElementById('trafficCurve').getContext('2d');
+            let gradTraffic = ctx1.createLinearGradient(0, 0, 0, 300);
+            gradTraffic.addColorStop(0, 'rgba(59, 130, 246, 0.7)'); gradTraffic.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+            const ctx2 = document.getElementById('revenueCurve').getContext('2d');
+            let gradRev = ctx2.createLinearGradient(0, 0, 0, 140);
+            gradRev.addColorStop(0, 'rgba(16, 185, 129, 0.7)'); gradRev.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+            let trafficDatasets = [{
+                label: isToday ? 'Live Trajectory (%)' : 'Traffic Density (%)', data: trafficPoints,
+                borderColor: '#3B82F6', borderWidth: 3, pointBackgroundColor: '#111827', pointBorderColor: '#3B82F6', pointRadius: 4, fill: true, backgroundColor: gradTraffic, tension: 0.4
+            }];
+            let revenueDatasets = [{
+                label: isToday ? 'Live Projection (Rs)' : 'Cumulative Revenue (Rs)', data: revenuePoints,
+                borderColor: '#10B981', borderWidth: 3, pointBackgroundColor: '#111827', pointBorderColor: '#10B981', pointRadius: 3, fill: true, backgroundColor: gradRev, tension: 0.1
+            }];
+            
+            trafficDatasets.push({ label: 'Same Day Last Week', data: lwTrafficPoints, borderColor: 'rgba(245, 158, 11, 0.6)', borderWidth: 2, borderDash: [3, 3], pointRadius: 0, fill: false, tension: 0.4 });
+            revenueDatasets.push({ label: 'Same Day Last Week', data: lwRevenuePoints, borderColor: 'rgba(245, 158, 11, 0.6)', borderWidth: 2, borderDash: [3, 3], pointRadius: 0, fill: false, tension: 0.1 });
+
+            if (isToday) {
+                trafficDatasets.push({ label: 'Historical Expectation', data: baselineTrafficPoints, borderColor: 'rgba(255, 255, 255, 0.2)', borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0.4 });
+                revenueDatasets.push({ label: 'Historical Expectation', data: baselineRevenuePoints, borderColor: 'rgba(255, 255, 255, 0.2)', borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0.1 });
+            }
+            renderChart('trafficCurve', chart1, labels, trafficDatasets);
+            renderChart('revenueCurve', chart2, labels, revenueDatasets);
+            
+            // Draw 7-Day Chart
+            renderBarChart('weeklyCurve', weeklyLabels, weeklyData, weeklyColors);
+        }
+
+        function renderChart(id, chartRef, labels, datasets) {
+            const ctx = document.getElementById(id).getContext('2d');
+            if(chartRef) chartRef.destroy();
+            const newChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: true, labels: { color: '#9CA3AF', usePointStyle: true, boxWidth: 8, font: {family: "'Plus Jakarta Sans', sans-serif"} } } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)', borderDash: [5,5] }, ticks: { color: '#9CA3AF' } },
+                        x: { grid: { display: false }, ticks: { color: '#9CA3AF' } }
+                    },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+            if (id === 'trafficCurve') chart1 = newChart; else chart2 = newChart;
+        }
+
+        let chart3 = null;
+        function renderBarChart(id, labels, data, colors) {
+            const ctx = document.getElementById(id).getContext('2d');
+            if(chart3) chart3.destroy();
+            chart3 = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Predicted Revenue (Rs)',
+                        data: data,
+                        backgroundColor: colors,
+                        borderRadius: 6,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)', borderDash: [5,5] }, ticks: { color: '#9CA3AF' } },
+                        x: { grid: { display: false }, ticks: { color: '#9CA3AF', font: {family: "'Plus Jakarta Sans', sans-serif"} } }
+                    }
+                }
+            });
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>

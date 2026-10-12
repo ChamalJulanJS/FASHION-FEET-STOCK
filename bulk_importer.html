@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FashionFeet POS - Bulk GRN Importer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-5xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6">📦 FashionFeet Bulk GRN Importer</h1>
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Location (Branch)</label>
+                <select id="locationSelect" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"></select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Supplier</label>
+                <select id="supplierSelect" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"></select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Invoice / Reference No</label>
+                <input type="text" id="refNo" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="e.g. INV-2026-001">
+                        </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Received Date</label>
+                <input type="date" id="receivedDate" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Discount (Rs)</label>
+                <input type="number" id="discountVal" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="0">
+            </div>
+            <div class="col-span-2">
+                <label class="block text-sm font-medium text-gray-700">Notes / Remarks</label>
+                <input type="text" id="notesVal" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="Enter any notes here...">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Upload CSV File</label>
+                <input type="file" id="csvFile" accept=".csv" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
+            </div>
+        </div>
+
+        <button id="importBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded hover:bg-blue-700 transition mb-6">
+            🔍 Analyze & Preview
+        </button>
+
+        <div id="previewArea" class="hidden mb-6">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">📊 Import Preview (Check before saving)</h3>
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-blue-100 p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-blue-600 font-bold">Total Quantity</p>
+                    <p class="text-3xl font-black text-blue-900" id="prevQty">0</p>
+                </div>
+                <div class="bg-red-100 p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-red-600 font-bold">Total Cost Value</p>
+                    <p class="text-3xl font-black text-red-900" id="prevCost">Rs. 0</p>
+                </div>
+                <div class="bg-green-100 p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-green-600 font-bold">Total Selling Value</p>
+                    <p class="text-3xl font-black text-green-900" id="prevSell">Rs. 0</p>
+                </div>
+            </div>
+            
+                        <div class="flex space-x-4 mb-4">
+                <button id="viewDetailedBtn" class="bg-blue-600 text-white px-4 py-2 rounded font-bold shadow">Detailed View (All Sizes)</button>
+                <button id="viewSummaryBtn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold shadow hover:bg-gray-300">Summary View (Grouped)</button>
+            </div>
+            
+            
+            <div class="flex space-x-4 mb-4">
+                <button id="viewDetailedBtn" class="bg-blue-600 text-white px-4 py-2 rounded font-bold shadow">Detailed View (All Sizes)</button>
+                <button id="viewSummaryBtn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold shadow hover:bg-gray-300">Summary View (Grouped)</button>
+            </div>
+            
+            <div class="overflow-x-auto bg-gray-50 border border-gray-200 rounded-lg shadow-inner mb-6 max-h-64 overflow-y-auto">
+                <table class="min-w-full text-left text-sm whitespace-nowrap">
+                    <thead id="previewTableHead" class="uppercase tracking-wider border-b-2 border-gray-300 bg-gray-100 sticky top-0">
+                    </thead>
+                    <tbody id="previewTableBody" class="divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+
+            <button id="confirmBtn" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded hover:bg-green-700 transition">
+                ✅ Confirm & Save to POS
+            </button>
+        </div>
+
+        <div class="mt-4">
+            <h3 class="text-lg font-medium text-gray-800 mb-2">System Log:</h3>
+            <div id="logArea" class="bg-gray-900 text-green-400 p-4 rounded-md h-40 overflow-y-auto font-mono text-sm whitespace-pre-line">Ready to analyze...</div>
+        </div>
+    </div>
+
+    <script>
+
+        // Supabase Connection
+        const supabaseUrl = 'https://qrzpsvyqiozhygtoklhv.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyenBzdnlxaW96aHlndG9rbGh2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1MTY4MSwiZXhwIjoyMDkwMDI3NjgxfQ.UNxy_PaglB-lVmOP6Ngl1jtVrkQNJ2My5-JL_VV-Agk';
+        const sb = supabase.createClient(supabaseUrl, supabaseKey);
+
+        const logArea = document.getElementById('logArea');
+        let parsedImportData = [];
+        let currentViewMode = 'detailed';
+
+        function log(msg) {
+            logArea.innerHTML += msg + '\n';
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        async function init() {
+            log("Loading Suppliers and Locations...");
+            try {
+                const { data: locs } = await sb.from('locations').select('*');
+                const locSelect = document.getElementById('locationSelect');
+                if (locs) {
+                    locs.forEach(l => {
+                        let opt = document.createElement('option');
+                        opt.value = l.id;
+                        opt.innerHTML = l.name;
+                        locSelect.appendChild(opt);
+                    });
+                }
+
+                const { data: sups } = await sb.from('suppliers').select('*');
+                const supSelect = document.getElementById('supplierSelect');
+                if (sups) {
+                    sups.forEach(s => {
+                        let opt = document.createElement('option');
+                        opt.value = s.id;
+                        opt.innerHTML = s.name;
+                        supSelect.appendChild(opt);
+                    });
+                }
+                log("Ready!");
+            } catch(e) {
+                log("Error loading initial data: " + e.message);
+            }
+        }
+
+        function renderTable(mode) {
+            currentViewMode = mode;
+            const thead = document.getElementById('previewTableHead');
+            const tbody = document.getElementById('previewTableBody');
+            
+            document.getElementById('viewDetailedBtn').className = mode === 'detailed' ? 'bg-blue-600 text-white px-4 py-2 rounded font-bold shadow' : 'bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold shadow hover:bg-gray-300';
+            document.getElementById('viewSummaryBtn').className = mode === 'summary' ? 'bg-blue-600 text-white px-4 py-2 rounded font-bold shadow' : 'bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold shadow hover:bg-gray-300';
+
+            if (mode === 'detailed') {
+                thead.innerHTML = `
+                    <tr>
+                        <th class="px-4 py-2">#</th>
+                        <th class="px-4 py-2">Product</th>
+                        <th class="px-4 py-2">SKU</th>
+                        <th class="px-4 py-2">Size</th>
+                        <th class="px-4 py-2">Color</th>
+                        <th class="px-4 py-2">Qty</th>
+                        <th class="px-4 py-2">Unit Cost</th>
+                        <th class="px-4 py-2">Total Cost</th>
+                        <th class="px-4 py-2">Total Sell</th>
+                    </tr>
+                `;
+                let htmlStr = '';
+                parsedImportData.forEach((item, index) => {
+                    htmlStr += `
+                        <tr>
+                            <td class="px-4 py-2 font-bold text-gray-400">${index + 1}</td>
+                            <td class="px-4 py-2 font-medium">${item.ProductName}</td>
+                            <td class="px-4 py-2 text-gray-500">${item.finalSKU}</td>
+                            <td class="px-4 py-2">${item.Size}</td>
+                            <td class="px-4 py-2">${item.Colour}</td>
+                            <td class="px-4 py-2 font-bold">${item.Quantity}</td>
+                            <td class="px-4 py-2 text-gray-600">${item.cPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td class="px-4 py-2 font-bold text-red-600">${(item.cPrice * item.Quantity).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = htmlStr;
+            } else {
+                thead.innerHTML = `
+                    <tr>
+                        <th class="px-4 py-2">#</th>
+                        <th class="px-4 py-2">Product</th>
+                        <th class="px-4 py-2">Color</th>
+                        <th class="px-4 py-2">Unit Sell (Rs)</th>
+                        <th class="px-4 py-2">Total Qty</th>
+                        <th class="px-4 py-2">Total Cost</th>
+                        <th class="px-4 py-2">Total Sell</th>
+                    </tr>
+                `;
+                
+                let summary = {};
+                parsedImportData.forEach(item => {
+                    let key = item.ProductName + '___' + item.Colour + '___' + item.sPrice;
+                    if (!summary[key]) {
+                        summary[key] = {
+                            ProductName: item.ProductName,
+                            Colour: item.Colour,
+                            TotalQty: 0,
+                            TotalCost: 0,
+                            TotalSell: 0,
+                            UnitSell: item.sPrice
+                        };
+                    }
+                    summary[key].TotalQty += item.Quantity;
+                    summary[key].TotalCost += (item.cPrice * item.Quantity);
+                    summary[key].TotalSell += (item.sPrice * item.Quantity);
+                });
+
+                let htmlStr = '';
+                let idx = 1;
+                for (let key in summary) {
+                    let item = summary[key];
+                    htmlStr += `
+                        <tr class="bg-blue-50">
+                            <td class="px-4 py-2 font-bold text-gray-400">${idx++}</td>
+                            <td class="px-4 py-2 font-medium text-blue-900">${item.ProductName}</td>
+                            <td class="px-4 py-2">${item.Colour}</td>
+                            <td class="px-4 py-2 font-bold text-green-600">${item.UnitSell.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td class="px-4 py-2 font-bold text-blue-800 text-lg">${item.TotalQty}</td>
+                            <td class="px-4 py-2 font-bold text-red-600">${item.TotalCost.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td class="px-4 py-2 font-bold text-green-600">${item.TotalSell.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        </tr>
+                    `;
+                }
+                tbody.innerHTML = htmlStr;
+            }
+        }
+
+        document.getElementById('viewDetailedBtn').addEventListener('click', () => renderTable('detailed'));
+        document.getElementById('viewSummaryBtn').addEventListener('click', () => renderTable('summary'));
+
+        document.getElementById('importBtn').addEventListener('click', () => {
+            const fileInput = document.getElementById('csvFile');
+            if (!fileInput.files.length) return alert('Please select a CSV file first!');
+
+            const file = fileInput.files[0];
+            parsedImportData = [];
+            logArea.innerHTML = '';
+            log(`Analyzing file: ${file.name}...`);
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const rows = results.data;
+                    let lastProductName = '';
+                    let lastBrand = '';
+                    let lastCategory = '';
+                    let lastGender = '';
+                    let lastColour = '';
+                    let lastSellingPrice = 0;
+
+                    let totalQty = 0;
+                    let totalCost = 0;
+                    let totalSell = 0;
+
+                    for (let i = 0; i < rows.length; i++) {
+                        const row = rows[i];
+                        
+                        let ProductName = row.ProductName?.trim() || lastProductName;
+                        let Brand = row.Brand?.trim() || lastBrand;
+                        let Category = row.Category?.trim() || lastCategory;
+                        let Gender = row.Gender?.trim() || lastGender;
+                        let Colour = row.Colour?.trim() || lastColour;
+                        let SellingPrice = row.SellingPrice?.trim() || lastSellingPrice;
+                        
+                        
+
+                        let SKU = row.SKU?.trim();
+                        let Size = row.Size?.trim() || '-';
+                        let Quantity = parseInt(row.Quantity?.trim() || 1);
+
+                        lastProductName = ProductName;
+                        lastBrand = Brand;
+                        lastCategory = Category;
+                        lastGender = Gender;
+                        lastColour = Colour;
+                        lastSellingPrice = SellingPrice;
+
+                        if (!ProductName) {
+                            log(`⚠️ පේළිය අතහැරියා (Excel Row ${i + 2}): Product Name එකක් නැත.`);
+                            continue;
+                        }
+                        
+                        Colour = Colour || '-';
+
+                        let baseSKU = SKU || ProductName;
+                        let finalSKU = baseSKU;
+                        
+                        if (Size !== '-' || Colour !== '-') {
+                            let sizePart = Size !== '-' ? Size : '';
+                            let colourPart = Colour !== '-' ? Colour : '';
+                            finalSKU = `${baseSKU}${sizePart}${colourPart}`;
+                            finalSKU = finalSKU.replace(/\s+/g, '').toUpperCase();
+                            
+                            if (ProductName.toUpperCase().trim() === 'CD2016') {
+                                let sNum = parseInt(Size);
+                                if (sNum >= 41 && sNum <= 44) finalSKU += 'M';
+                                else if (sNum >= 36 && sNum <= 40) finalSKU += 'F';
+                            }
+                        }
+
+                        let cleanSP = (SellingPrice || '').toString().replace(/,/g, ''); let sPrice = parseFloat(cleanSP || 0);
+                        let cPrice = sPrice * 0.60;
+
+                        totalQty += Quantity;
+                        totalCost += (cPrice * Quantity);
+                        totalSell += (sPrice * Quantity);
+
+                        parsedImportData.push({
+                            ProductName, Brand, Category, Gender, Size, Colour, finalSKU, cPrice, sPrice, Quantity, ExcelRow: i + 2
+                        });
+                    }
+
+                    document.getElementById('prevQty').innerText = totalQty.toLocaleString();
+                    document.getElementById('prevCost').innerText = 'Rs. ' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2});
+                    document.getElementById('prevSell').innerText = 'Rs. ' + totalSell.toLocaleString(undefined, {minimumFractionDigits: 2});
+                    
+                    document.getElementById('previewArea').classList.remove('hidden');
+                    log(`Analysis complete! Found ${parsedImportData.length} valid items.`);
+                    
+                    renderTable('detailed');
+                }
+            });
+        });
+
+        document.getElementById('confirmBtn').addEventListener('click', async () => {
+            const locId = document.getElementById('locationSelect').value;
+            const supId = document.getElementById('supplierSelect').value;
+            const refNo = document.getElementById('refNo').value;
+
+                        const receivedDate = document.getElementById('receivedDate').value;
+            const discountVal = parseFloat(document.getElementById('discountVal').value || 0);
+            const notesVal = document.getElementById('notesVal').value;
+
+            if (!refNo) return alert('Please enter an Invoice/Reference No!');
+            if (parsedImportData.length === 0) return alert('No valid data to import.');
+
+            document.getElementById('confirmBtn').disabled = true;
+            document.getElementById('confirmBtn').innerText = '? Saving to POS... Please wait...';
+            log(`\n--- Starting DB Import of ${parsedImportData.length} items ---`);
+
+            try {
+                const { data: grn, error: grnErr } = await sb.from('grns').insert({
+                    location_id: locId,
+                    supplier_id: supId,
+                    reference_no: refNo,
+                    received_at: receivedDate ? new Date(receivedDate).toISOString() : new Date().toISOString(),
+                    discount: discountVal,
+                    notes: notesVal,
+                    received_by: 'a7a20061-8bee-42c2-808d-212b2fa86e84', // Admin fallback
+                    status: 'draft'
+                }).select().single();
+
+                if (grnErr) throw grnErr;
+                log(`Created GRN Draft (ID: ${grn.id})`);
+
+                let grnItems = [];
+
+                for (let i = 0; i < parsedImportData.length; i++) {
+                    const item = parsedImportData[i];
+                    
+                    // Check Product
+                    let { data: prods } = await sb.from('products').select('id').ilike('name', item.ProductName).limit(1);
+                    let prodId = prods && prods.length > 0 ? prods[0].id : null;
+
+                    if (!prodId) {
+                        const { data: newProd } = await sb.from('products').insert({
+                            name: item.ProductName,
+                            brand: item.Brand || '-',
+                            category: item.Category || '-',
+                            gender: item.Gender || 'Unisex'
+                        }).select().single();
+                        prodId = newProd.id;
+                        log(`New product added: ${item.ProductName}`);
+                    }
+
+                    // Check Variant
+                    let { data: vars } = await sb.from('product_variants').select('id').eq('sku', item.finalSKU).limit(1);
+                    let varId = vars && vars.length > 0 ? vars[0].id : null;
+
+                    if (!varId) {
+                        const { data: newVar } = await sb.from('product_variants').insert({
+                            product_id: prodId,
+                            sku: item.finalSKU,
+                            barcode: item.finalSKU,
+                            size: item.Size,
+                            colour: item.Colour,
+                            cost_price: item.cPrice,
+                            selling_price: item.sPrice
+                        }).select().single();
+                        varId = newVar.id;
+                        log(`New variant added: ${item.finalSKU}`);
+                    }
+
+                    grnItems.push({
+                        grn_id: grn.id,
+                        variant_id: varId,
+                        quantity_received: item.Quantity,
+                        unit_cost: item.cPrice
+                    });
+                }
+
+                if (grnItems.length > 0) {
+                    await sb.from('grn_items').insert(grnItems);
+                    log(`\n✅ SUCCESSFULLY IMPORTED! ${grnItems.length} items added to GRN.`);
+                    alert('Import Successful! You can now view the Draft GRN in POS.');
+                    
+                    // Reset UI
+                    document.getElementById('previewArea').classList.add('hidden');
+                    parsedImportData = [];
+                    document.getElementById('csvFile').value = '';
+                }
+                
+            } catch(err) {
+                log(`❌ ERROR: ${err.message}`);
+                alert('Error occurred during import. Check logs.');
+            }
+
+            document.getElementById('confirmBtn').disabled = false;
+            document.getElementById('confirmBtn').innerText = '✅ Confirm & Save to POS';
+        });
+
+        init();
+
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branch Transfer Receiver</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f4f6; padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #1d4ed8; font-size: 24px; margin-bottom: 5px; }
+        p.sub { color: #6b7280; margin-bottom: 20px; }
+        .card { border: 1px solid #e5e7eb; padding: 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; background: #fff; }
+        .card:hover { border-color: #3b82f6; background: #eff6ff; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
+        .status { font-weight: bold; text-transform: uppercase; font-size: 12px; }
+        .received { color: #059669; } .pending { color: #d97706; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+        th { background: #f9fafb; font-size: 14px; }
+        input { padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 100%; box-sizing: border-box; }
+        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-add { background: #e5e7eb; color: #374151; font-size: 12px; margin-top: 10px; }
+        .btn-add:hover { background: #d1d5db; }
+        .btn-remove { color: #ef4444; background: none; text-decoration: underline; padding: 0; }
+        .btn-save { background: #2563eb; color: #fff; padding: 12px 20px; font-size: 16px; width: 100%; margin-top: 20px; }
+        .btn-save:hover { background: #1d4ed8; }
+        .btn-back { background: none; color: #2563eb; border: none; cursor: pointer; text-decoration: underline; margin-bottom: 15px; font-size: 14px; padding: 0; }
+        .item-box { border: 1px solid #e5e7eb; padding: 15px; border-radius: 6px; margin-bottom: 20px; background: #fdfdfd; }
+        .item-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .msg { padding: 10px; border-radius: 4px; margin-bottom: 15px; display: none; }
+        .error { background: #fee2e2; color: #b91c1c; }
+        .success { background: #d1fae5; color: #047857; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" style="float: right; text-decoration: none; background: #4f46e5; color: white; padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 13px;">📦 Open Transfer Hub (Send)</a>
+        <h1>🚚 Branch Transfer Receiver (Split by Size)</h1>
+        <p class="sub">Select a branch transfer below to split generic items into size-specific items.</p>
+        
+        <div id="msgBox" class="msg"></div>
+        <div id="loading" style="color: #2563eb; font-weight: bold;">Loading data from database...</div>
+        
+        <div id="transfersList" class="grid" style="display: none;"></div>
+        
+        <div id="transferDetails" style="display: none;">
+            <button class="btn-back" onclick="showTransfers()">← Back to Transfers</button>
+            <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Transfer Items</h2>
+            <div id="itemsLoading" style="color: #2563eb;">Loading transfer items...</div>
+            <div id="itemsContainer"></div>
+            <button id="saveBtn" class="btn btn-save" onclick="saveSplits()">Confirm & Process Splits</button>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'https://qrzpsvyqiozhygtoklhv.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyenBzdnlxaW96aHlndG9rbGh2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1MTY4MSwiZXhwIjoyMDkwMDI3NjgxfQ.UNxy_PaglB-lVmOP6Ngl1jtVrkQNJ2My5-JL_VV-Agk';
+        const sb = window.supabase.createClient(supabaseUrl, supabaseKey);
+        const shoeGalleryLocationId = 'b9730905-c070-4ee8-960e-74d2fef1592b';
+
+        let currentTransfer = null;
+        let currentItems = [];
+
+        async function loadTransfers() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('transfersList').style.display = 'none';
+            document.getElementById('transferDetails').style.display = 'none';
+            hideMsg();
+
+            const { data, error } = await sb
+                .from('transfers')
+                .select('*')
+                .eq('to_location', shoeGalleryLocationId)
+                .order('created_at', { ascending: false });
+
+            document.getElementById('loading').style.display = 'none';
+            if (error) {
+                showMsg('Error loading transfers: ' + error.message, true);
+                return;
+            }
+
+            const list = document.getElementById('transfersList');
+            list.innerHTML = '';
+            data.forEach(t => {
+                let div = document.createElement('div');
+                div.className = 'card';
+                let dateStr = new Date(t.created_at).toLocaleDateString();
+                let statusClass = t.status === 'received' ? 'received' : 'pending';
+                div.innerHTML = `
+                    <div style="font-weight: bold; font-size: 16px;">Transfer</div>
+                    <div style="color: #6b7280; font-size: 14px;">Date: ${dateStr}</div>
+                    <div style="color: #6b7280; font-size: 14px;">Status: <span class="status ${statusClass}">${t.status}</span></div>
+                `;
+                div.onclick = () => selectTransfer(t);
+                list.appendChild(div);
+            });
+            list.style.display = 'grid';
+        }
+
+        async function selectTransfer(t) {
+            currentTransfer = t;
+            document.getElementById('transfersList').style.display = 'none';
+            document.getElementById('transferDetails').style.display = 'block';
+            document.getElementById('itemsLoading').style.display = 'block';
+            document.getElementById('itemsContainer').innerHTML = '';
+            document.getElementById('saveBtn').style.display = 'none';
+            hideMsg();
+
+            const { data, error } = await sb
+                .from('stock_movements')
+                .select('id, quantity, variant_id, created_by, product_variants(sku, product_id, products(name, category, brand, gender, selling_price, cost_price))')
+                .eq('reference_id', t.id)
+                .eq('type', 'branch_transfer')
+                .eq('to_location', shoeGalleryLocationId)
+                .gt('quantity', 0);
+
+            document.getElementById('itemsLoading').style.display = 'none';
+            if (error) {
+                showMsg('Error loading items: ' + error.message, true);
+                return;
+            }
+
+            currentItems = data.map(item => ({
+                ...item,
+                splits: [{ size: '', colour: '', qty: item.quantity }]
+            }));
+            
+            renderItems();
+            document.getElementById('saveBtn').style.display = 'block';
+        }
+
+        function renderItems() {
+            const container = document.getElementById('itemsContainer');
+            container.innerHTML = '';
+
+            currentItems.forEach((item, itemIdx) => {
+                let name = (item.product_variants.products && item.product_variants.products.name) ? item.product_variants.products.name : item.product_variants.sku;
+                
+                let splitTotal = item.splits.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
+                let totalColor = splitTotal === item.quantity ? '#059669' : '#dc2626';
+
+                let box = document.createElement('div');
+                box.className = 'item-box';
+                
+                let header = `
+                    <div class="item-header">
+                        <div>
+                            <div style="font-weight: bold; color: #1e40af; font-size: 18px;">${name}</div>
+                            <div style="font-size: 13px; color: #6b7280;">Original SKU: ${item.product_variants.sku} | Transferred: <b style="color:#000;">${item.quantity}</b></div>
+                        </div>
+                        <div style="font-weight: bold; font-size: 14px; color: ${totalColor}">
+                            Split Total: ${splitTotal} / ${item.quantity}
+                        </div>
+                    </div>
+                `;
+
+                let tableRows = item.splits.map((split, sIdx) => `
+                    <tr>
+                        <td><input type="text" placeholder="e.g. 40" value="${split.size}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'size', this.value)"></td>
+                        <td><input type="text" placeholder="e.g. BLK" value="${split.colour}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'colour', this.value)"></td>
+                        <td><input type="number" min="1" value="${split.qty}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'qty', this.value)"></td>
+                        <td><button class="btn btn-remove" onclick="removeSplit(${itemIdx}, ${sIdx})">Remove</button></td>
+                    </tr>
+                `).join('');
+
+                box.innerHTML = header + `
+                    <table>
+                        <thead><tr><th>Size</th><th>Colour (Opt)</th><th>Quantity</th><th>Action</th></tr></thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                    <button class="btn btn-add" onclick="addSplit(${itemIdx})">+ Add Split Row</button>
+                `;
+                container.appendChild(box);
+            });
+        }
+
+        function updateSplit(itemIdx, splitIdx, field, value) {
+            if (field === 'qty') value = parseInt(value) || 0;
+            currentItems[itemIdx].splits[splitIdx][field] = value;
+            renderItems();
+        }
+
+        function addSplit(itemIdx) {
+            currentItems[itemIdx].splits.push({ size: '', colour: '', qty: 1 });
+            renderItems();
+        }
+
+        function removeSplit(itemIdx, splitIdx) {
+            currentItems[itemIdx].splits.splice(splitIdx, 1);
+            renderItems();
+        }
+
+        function showTransfers() {
+            currentTransfer = null;
+            document.getElementById('transfersList').style.display = 'grid';
+            document.getElementById('transferDetails').style.display = 'none';
+        }
+
+        function showMsg(text, isError) {
+            const m = document.getElementById('msgBox');
+            m.className = 'msg ' + (isError ? 'error' : 'success');
+            m.innerText = text;
+            m.style.display = 'block';
+            window.scrollTo(0, 0);
+        }
+        function hideMsg() {
+            document.getElementById('msgBox').style.display = 'none';
+        }
+
+        async function saveSplits() {
+            hideMsg();
+            // Validation
+            for (let item of currentItems) {
+                let splitTotal = item.splits.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
+                if (splitTotal !== item.quantity) {
+                    showMsg('Error: Total split quantity for ' + item.product_variants.sku + ' does not match original quantity ('+item.quantity+').', true);
+                    return;
+                }
+                for (let split of item.splits) {
+                    if (!split.size && item.splits.length > 1) {
+                        showMsg('Error: Please enter a size for all splits of ' + item.product_variants.sku, true);
+                        return;
+                    }
+                }
+            }
+
+            const btn = document.getElementById('saveBtn');
+            btn.innerText = 'Saving... Please wait';
+            btn.disabled = true;
+
+            try {
+                for (let item of currentItems) {
+                    let originalVariant = item.product_variants;
+                    
+                    const { data: oldStock } = await sb.from('stock_levels').select('*').eq('variant_id', item.variant_id).eq('location_id', shoeGalleryLocationId).single();
+                    if (oldStock) {
+                        await sb.from('stock_levels').update({ quantity: oldStock.quantity - item.quantity }).eq('id', oldStock.id);
+                    }
+                    
+                    await sb.from('stock_movements').delete().eq('id', item.id);
+
+                    for (let split of item.splits) {
+                        let baseName = (originalVariant.products && originalVariant.products.name) ? originalVariant.products.name : originalVariant.sku;
+                        let newSku = baseName;
+                        if (split.size) newSku += split.size.trim().toUpperCase();
+                        if (split.colour) newSku += split.colour.trim().toUpperCase();
+                        newSku = newSku.replace(/\s+/g, '');
+
+                        let { data: existingVariant } = await sb.from('product_variants').select('*').eq('sku', newSku).single();
+                        let targetVariantId;
+
+                        if (existingVariant) {
+                            targetVariantId = existingVariant.id;
+                        } else {
+                            const { data: newVar, error: varErr } = await sb.from('product_variants').insert({
+                                product_id: originalVariant.product_id,
+                                sku: newSku,
+                                barcode: newSku,
+                                size: split.size ? split.size.trim().toUpperCase() : null,
+                                colour: split.colour ? split.colour.trim().toUpperCase() : null,
+                                selling_price: (originalVariant.products && originalVariant.products.selling_price) ? originalVariant.products.selling_price : 0,
+                                cost_price: (originalVariant.products && originalVariant.products.cost_price) ? originalVariant.products.cost_price : 0
+                            }).select().single();
+                            
+                            if (varErr) throw varErr;
+                            targetVariantId = newVar.id;
+                        }
+
+                        await sb.from('stock_movements').insert({
+                            variant_id: targetVariantId,
+                            from_location: null,
+                            to_location: shoeGalleryLocationId,
+                            quantity: split.qty,
+                            type: 'branch_transfer',
+                            reference_id: currentTransfer.id,
+                            created_by: item.created_by
+                        });
+                        
+                        const { data: splitStock } = await sb.from('stock_levels').select('*').eq('variant_id', targetVariantId).eq('location_id', shoeGalleryLocationId).single();
+                        if (splitStock) {
+                            await sb.from('stock_levels').update({ quantity: splitStock.quantity + split.qty }).eq('id', splitStock.id);
+                        } else {
+                            await sb.from('stock_levels').insert({
+                                variant_id: targetVariantId,
+                                location_id: shoeGalleryLocationId,
+                                quantity: split.qty
+                            });
+                        }
+                    }
+                }
+                
+                if (currentTransfer.status !== 'received') {
+                    await sb.from('transfers').update({ status: 'received' }).eq('id', currentTransfer.id);
+                }
+
+                showMsg('Transfer successfully split and stock updated!', false);
+                setTimeout(() => { loadTransfers(); }, 2000);
+
+            } catch(err) {
+                showMsg('Error saving splits: ' + err.message, true);
+            } finally {
+                btn.innerText = 'Confirm & Process Splits';
+                btn.disabled = false;
+            }
+        }
+
+        window.onload = loadTransfers;
+    </script>
+</body>
+</html>
