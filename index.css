@@ -3774,9 +3774,9 @@ body.light-theme .auth-input {
 }
 
 .size-stock-box {
-    min-width: 46px;
+    min-width: 52px;
     flex: 1;
-    max-width: 65px;
+    max-width: 82px;
     text-align: center;
     padding: 0.35rem 0.25rem;
     border-radius: 6px;
@@ -3791,6 +3791,7 @@ body.light-theme .auth-input {
     font-size: 0.72rem;
     color: var(--text-dim);
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .size-stock-box .sz-qty {
@@ -4023,9 +4024,9 @@ body.light-theme .auth-input {
 }
 
 .sheet-size-cell {
-    min-width: 52px;
+    min-width: 56px;
     flex: 1;
-    max-width: 72px;
+    max-width: 84px;
     background: var(--bg-tertiary);
     border: 1px solid var(--glass-border);
     border-radius: 6px;
@@ -4041,6 +4042,7 @@ body.light-theme .auth-input {
     font-size: 0.72rem;
     font-weight: 700;
     color: var(--text-main);
+    white-space: nowrap;
 }
 
 .sheet-size-cell .cell-stock-tag {

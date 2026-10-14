@@ -1,5 +1,5 @@
-// FashionFeet Pro Stock Transfer Hub — Service Worker (v5)
-const CACHE_NAME = 'ff-transfer-v5';
+// FashionFeet Pro Stock Transfer Hub — Service Worker (v6)
+const CACHE_NAME = 'ff-transfer-v6';
 const ASSETS = [
     './index.html',
     './index.css',

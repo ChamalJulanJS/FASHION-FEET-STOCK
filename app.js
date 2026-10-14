@@ -785,7 +785,7 @@ async function syncCatalogAndStock() {
     try {
         // 1. Fetch full product variants catalog with products join
         const catRes = await fetch(
-            `${SUPABASE_URL}/product_variants?select=id,product_id,sku,barcode,size,colour,selling_price,cost_price,products(id,name,brand,category)&limit=3000`,
+            `${SUPABASE_URL}/product_variants?select=id,product_id,sku,barcode,size,colour,selling_price,cost_price,products(id,name,brand,category,gender)&limit=3000`,
             { headers: HEADERS }
         );
         if (!catRes.ok) throw new Error("Catalog fetch failed");
@@ -1026,6 +1026,63 @@ function closeCustomDropdowns() {
 
 /**
  * ==========================================================================
+ * Shoe Size Conversion Engine (Sri Lanka Standard: Men's 40 = UK 6)
+ * ==========================================================================
+ */
+function isMenShoe(product) {
+    if (!product) return false;
+    const gender = (product.gender || '').trim().toUpperCase();
+    const name = (product.name || '').toUpperCase();
+    const category = (product.category || '').toUpperCase();
+
+    // Explicit exclusions for Women, Ladies, Girls, Kids, Baby
+    if (gender.includes('WOMEN') || name.includes('WOMEN') || category.includes('WOMEN') ||
+        gender.includes('LADIES') || name.includes('LADIES') || category.includes('LADIES') ||
+        gender.includes('GIRL') || name.includes('GIRL') || category.includes('GIRL') ||
+        gender.includes('KIDS') || name.includes('KIDS') || category.includes('KIDS') ||
+        gender.includes('BABY') || name.includes('BABY') || category.includes('BABY')) {
+        return false;
+    }
+
+    if (gender === 'MEN' || gender === 'MALE' || gender.includes('MEN') || gender.includes('MALE')) {
+        return true;
+    }
+    if (category.includes('MEN') || category.includes('MALE') || category.includes('GENTS')) {
+        return true;
+    }
+    if (name.includes('MEN') || name.includes('MALE') || name.includes('GENTS')) {
+        return true;
+    }
+
+    return true; // Default for remaining adult footwear styles
+}
+
+/**
+ * Convert Men's EU sizes (35-48) to UK equivalent:
+ * 40 = 6, 41 = 7, 42 = 8, 43 = 9, 44 = 10, 45 = 11, etc.
+ * Shows formatted as: "6 (40)", or "6" if uk_only
+ */
+function getShoeDisplaySize(rawSize, product, format = 'full') {
+    if (!rawSize) return '-';
+    const s = rawSize.toString().trim();
+    const num = parseFloat(s);
+
+    if (!isNaN(num) && num >= 35 && num <= 48 && isMenShoe(product)) {
+        const uk = num - 34;
+        if (format === 'uk_only') {
+            return `${uk}`;
+        }
+        if (format === 'html') {
+            return `${uk} <small class="sz-sub" style="font-size:0.72em; opacity:0.8; font-weight:normal;">(${num})</small>`;
+        }
+        return `${uk} (${num})`;
+    }
+
+    return s;
+}
+
+/**
+ * ==========================================================================
  * 6. Smart Search & Instant Barcode Scanner Engine
  * ==========================================================================
  */
@@ -1044,7 +1101,8 @@ function searchCatalog(query) {
         const skuMatch = v.sku && v.sku.toUpperCase().includes(q);
         const nameMatch = v.products?.name && v.products.name.toUpperCase().includes(q);
         const brandMatch = v.products?.brand && v.products.brand.toUpperCase().includes(q);
-        const sizeMatch = v.size && v.size.toString().trim() === q;
+        const dispSz = getShoeDisplaySize(v.size, v.products);
+        const sizeMatch = (v.size && v.size.toString().trim() === q) || dispSz.toUpperCase().includes(q);
         const catMatch = v.products?.category && v.products.category.toUpperCase().includes(q);
 
         return barcodeMatch || skuMatch || nameMatch || brandMatch || sizeMatch || catMatch;
@@ -1081,6 +1139,7 @@ function renderSearchResults(variants, query) {
         const stockClass = stockAtFrom > 0 ? 'in-stock' : 'out-stock';
         const brandPrefix = v.products?.brand ? `${v.products.brand} — ` : '';
         const shoeName = `${brandPrefix}${v.products?.name || v.sku}`;
+        const dispSize = getShoeDisplaySize(v.size, v.products);
 
         return `
             <li class="result-item" onclick="handleSelectVariant('${v.id}')">
@@ -1088,7 +1147,7 @@ function renderSearchResults(variants, query) {
                     <span class="res-name">${shoeName}</span>
                     <div class="res-sub">
                         <span class="res-sku">${v.sku}</span>
-                        <span class="res-size-pill">Size: ${v.size || 'N/A'}</span>
+                        <span class="res-size-pill">Size: ${dispSize}</span>
                         <span>${v.colour || '-'}</span>
                     </div>
                 </div>
@@ -1227,13 +1286,14 @@ function renderSizeMatrix(currentVariant) {
     el.sizeMatrixGrid.innerHTML = siblings.map(v => {
         const stock = getStock(v.id, fromId);
         const isCurrent = v.id === currentVariant.id;
+        const dispSize = getShoeDisplaySize(v.size, v.products);
         return `
             <div 
                 class="size-chip ${isCurrent ? 'active-variant' : ''}" 
                 onclick="handleSizeChipClick('${v.id}')"
-                title="Size ${v.size}: ${stock} prs in dispatch shop (Click to select/add)"
+                title="Size ${dispSize}: ${stock} prs in dispatch shop (Click to select/add)"
             >
-                <span class="chip-size">${v.size || '-'}</span>
+                <span class="chip-size">${dispSize}</span>
                 <span class="chip-stock ${stock === 0 ? 'zero' : ''}">${stock} prs</span>
             </div>
         `;
@@ -1355,7 +1415,7 @@ function renderCart() {
                     <div class="row-item-sku">SKU: ${v.sku} ${v.barcode ? '• Barcode: ' + v.barcode : ''}</div>
                 </td>
                 <td>
-                    <span class="size-pill">Size: ${v.size || 'N/A'}</span>
+                    <span class="size-pill">Size: ${getShoeDisplaySize(v.size, v.products)}</span>
                     <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">${v.colour || '-'}</div>
                 </td>
                 <td>
@@ -1662,7 +1722,7 @@ function showPrintableVoucher(details) {
                     <div style="font-size: 0.7rem; color: #6b7280;">Color: ${v.colour || '-'}</div>
                 </td>
                 <td style="font-family: var(--font-mono); font-size: 0.75rem;">${v.sku}</td>
-                <td style="text-align: center; font-weight: 700;">${v.size || 'N/A'}</td>
+                <td style="text-align: center; font-weight: 700;">${getShoeDisplaySize(v.size, v.products)}</td>
                 <td style="text-align: right; font-weight: 800; font-family: var(--font-mono);">${it.qty} prs</td>
             </tr>
         `;
@@ -2509,7 +2569,12 @@ function getMatchingReorderModels(overrideBrand, overrideCat, overrideStatus, ov
             const matchBrand = pBrand.toLowerCase().includes(q);
             const matchCat = pCat.toLowerCase().includes(q);
             const matchSku = variants.some(v => (v.sku && v.sku.toLowerCase().includes(q)) || (v.barcode && v.barcode.toLowerCase().includes(q)));
-            if (!matchName && !matchBrand && !matchCat && !matchSku) continue;
+            const matchSize = variants.some(v => {
+                const raw = (v.size || '').toLowerCase();
+                const disp = getShoeDisplaySize(v.size, p).toLowerCase();
+                return raw === q || disp.includes(q);
+            });
+            if (!matchName && !matchBrand && !matchCat && !matchSku && !matchSize) continue;
         }
 
         // Calculate size-wise stock
@@ -2522,8 +2587,10 @@ function getMatchingReorderModels(overrideBrand, overrideCat, overrideStatus, ov
             modelTotalStock += stock;
             if (stock === 0) hasZeroStock = true;
             if (stock <= 2) hasLowStock = true;
+            const displaySize = getShoeDisplaySize(v.size, p);
             return {
                 ...v,
+                displaySize: displaySize,
                 stock: stock
             };
         });
@@ -2540,6 +2607,8 @@ function getMatchingReorderModels(overrideBrand, overrideCat, overrideStatus, ov
             name: pName,
             brand: pBrand,
             category: pCat,
+            gender: p.gender || '',
+            productObj: p,
             totalStock: modelTotalStock,
             hasZeroStock: hasZeroStock,
             hasLowStock: hasLowStock,
@@ -2592,9 +2661,10 @@ function renderReorderCatalog() {
             if (v.stock === 0) statusCls = 'out-stock';
             else if (v.stock <= 2) statusCls = 'low-stock';
 
+            const dispSz = v.displaySize || getShoeDisplaySize(v.size, v.products || m.productObj);
             sizePillsHtml += `
-                <div class="size-stock-box ${statusCls}" title="Size ${v.size || '-'}: ${v.stock} in stock">
-                    <span class="sz-label">Sz ${v.size || '-'}</span>
+                <div class="size-stock-box ${statusCls}" title="Size ${dispSz}: ${v.stock} in stock">
+                    <span class="sz-label">Sz ${dispSz}</span>
                     <span class="sz-qty">${v.stock}</span>
                 </div>
             `;
@@ -2675,6 +2745,7 @@ function addCodeToReorder(productId) {
                 variantId: v.id,
                 sku: v.sku,
                 size: v.size || '-',
+                displaySize: getShoeDisplaySize(v.size, p),
                 colour: v.colour || '-',
                 currentStock: stock,
                 costPrice: Number(v.cost_price) || Number(variants[0].cost_price) || 0,
@@ -2925,7 +2996,7 @@ function renderReorderSheet() {
 
             sizeCellsHtml += `
                 <div class="sheet-size-cell">
-                    <span class="cell-sz">Sz ${v.size}</span>
+                    <span class="cell-sz">Sz ${v.displaySize || v.size}</span>
                     <span class="cell-stock-tag ${v.currentStock === 0 ? 'zero' : ''}" title="Click to use current stock (${v.currentStock}) as order qty" onclick="window._reorderHub.setQty('${productId}', '${v.variantId}', ${v.currentStock})">${v.currentStock} in st.</span>
                     <div class="stepper-wrap">
                         <button type="button" class="btn-step" onclick="window._reorderHub.stepQty('${productId}', '${v.variantId}', -1)">-</button>
@@ -3007,7 +3078,7 @@ function buildWhatsAppMessage() {
         orderedSizes.forEach(v => {
             modelPairs += v.orderQty;
             totalCost += (v.orderQty * (v.costPrice || 0));
-            sizeRows.push(`   • Size ${v.size} : *${v.orderQty} pairs* (Stock: ${v.currentStock})`);
+            sizeRows.push(`   • Size ${v.displaySize || v.size} : *${v.orderQty} pairs* (Stock: ${v.currentStock})`);
         });
 
         totalPairs += modelPairs;
@@ -3092,7 +3163,7 @@ function printReorderPO() {
                 <tr>
                     <td><strong>${item.brand}</strong> - ${item.name}</td>
                     <td>${item.category}</td>
-                    <td style="text-align:center; font-weight:bold;">${v.size}</td>
+                    <td style="text-align:center; font-weight:bold;">${v.displaySize || v.size}</td>
                     <td style="text-align:center;">${v.currentStock}</td>
                     <td style="text-align:center; font-weight:bold; font-size:1.05rem;">${v.orderQty}</td>
                     <td style="text-align:right;">Rs. ${(v.costPrice || 0).toLocaleString()}</td>
@@ -3191,7 +3262,7 @@ function exportReorderCSV() {
         orderedSizes.forEach(v => {
             hasItems = true;
             const lineCost = v.orderQty * (v.costPrice || 0);
-            csv += `"${item.brand}","${item.name}","${item.category}","${v.size}",${v.currentStock},${v.orderQty},${v.costPrice || 0},${lineCost}\n`;
+            csv += `"${item.brand}","${item.name}","${item.category}","${v.displaySize || v.size}",${v.currentStock},${v.orderQty},${v.costPrice || 0},${lineCost}\n`;
         });
     }
 
@@ -3342,7 +3413,7 @@ function exportCurrentStockCSV(targetLocId, targetBrand, targetCat, targetStatus
             grandTotalRetail += retailVal;
             grandTotalCost += costVal;
 
-            csv += `"${branchDisplay}","${m.brand}","${m.name}","${m.category}","${v.size || '-'}","${stock}","${v.barcode || ''}",${m.costPrice || 0},${m.sellingPrice || 0},${retailVal},${costVal}\n`;
+            csv += `"${branchDisplay}","${m.brand}","${m.name}","${m.category}","${v.displaySize || v.size || '-'}","${stock}","${v.barcode || ''}",${m.costPrice || 0},${m.sellingPrice || 0},${retailVal},${costVal}\n`;
         });
     });
 
@@ -3401,7 +3472,7 @@ function printCurrentStockSheet(targetLocId, targetBrand, targetCat, targetStatu
             const isLow = v.stock <= 2 && v.stock > 0;
             const color = isZero ? '#dc2626' : (isLow ? '#d97706' : '#16a34a');
             return `<span style="display:inline-block; margin:2px 4px; padding:2px 6px; border:1px solid #cbd5e1; border-radius:4px; font-size:11px; background:${isZero ? '#fef2f2' : '#f8fafc'};">
-                <span style="color:#64748b;">${v.size}:</span> <strong style="color:${color}; font-size:12px;">${v.stock}</strong>
+                <span style="color:#64748b;">${v.displaySize || v.size}:</span> <strong style="color:${color}; font-size:12px;">${v.stock}</strong>
             </span>`;
         }).join('');
 
@@ -3519,7 +3590,7 @@ function copyCurrentStockWhatsApp(targetLocId, targetBrand, targetCat, targetSta
 
     matchingModels.forEach(m => {
         totalPairs += m.totalStock;
-        const sizeParts = m.variants.map(v => `${v.size}:${v.stock}`).join(' | ');
+        const sizeParts = m.variants.map(v => `${v.displaySize || v.size}:${v.stock}`).join(' | ');
         text += `*${m.name}* (${m.brand})\n`;
         text += `👉 ${sizeParts}\n`;
         text += `📊 *Total: ${m.totalStock} prs* (Rs. ${m.sellingPrice.toLocaleString()})\n\n`;
