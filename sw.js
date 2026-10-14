@@ -1,5 +1,5 @@
-// FashionFeet Pro Stock Transfer Hub — Service Worker
-const CACHE_NAME = 'ff-transfer-v1';
+// FashionFeet Pro Stock Transfer Hub — Service Worker (v2)
+const CACHE_NAME = 'ff-transfer-v2';
 const ASSETS = [
     './index.html',
     './index.css',
@@ -11,37 +11,48 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(ASSETS);
         })
     );
-    self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+    // Delete any old caches immediately
     event.waitUntil(
         caches.keys().then((keys) => {
             return Promise.all(
                 keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
             );
-        })
+        }).then(() => self.clients.claim())
     );
-    self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
-    // Only cache local asset requests; API requests go directly to network
-    if (event.request.url.includes('supabase.co') || event.request.url.includes('unpkg.com')) {
-        return; // network fetch
+    if (event.request.method !== 'GET') return;
+
+    // Direct network for external services
+    if (
+        event.request.url.includes('supabase.co') || 
+        event.request.url.includes('unpkg.com') || 
+        event.request.url.includes('googleapis.com') ||
+        event.request.url.includes('gstatic.com')
+    ) {
+        return;
     }
 
+    // Network-First strategy: always fetch fresh assets when online, fall back to cache when offline
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            if (cachedResponse) return cachedResponse;
-            return fetch(event.request).then((networkResponse) => {
+        fetch(event.request)
+            .then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200) {
+                    const responseClone = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+                }
                 return networkResponse;
-            }).catch(() => caches.match('./index.html'));
-        })
+            })
+            .catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
     );
 });

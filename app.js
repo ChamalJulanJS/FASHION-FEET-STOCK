@@ -260,13 +260,18 @@ async function initApp() {
     await syncCatalogAndStock();
     await fetchRecentTransfers();
 
-    focusScanner();
+    if (window.location.hash.includes('reorder') && typeof window.switchHubTab === 'function') {
+        window.switchHubTab('reorder');
+    } else {
+        focusScanner();
+    }
 }
 
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').then(reg => {
             console.log('PWA ServiceWorker registered with scope:', reg.scope);
+            reg.update();
         }).catch(err => {
             console.warn('ServiceWorker registration error:', err);
         });
@@ -817,7 +822,9 @@ async function syncCatalogAndStock() {
         if (state.stagedItem) {
             renderStagedItemStock(state.stagedItem);
         }
-        if (state.reorder && state.reorder.isInitialized) {
+        if (window.location.hash.includes('reorder') || (document.getElementById('reorderWorkspaceView') && document.getElementById('reorderWorkspaceView').style.display !== 'none')) {
+            initReorderHub();
+        } else if (state.reorder && state.reorder.isInitialized) {
             renderReorderCatalog();
             refreshReorderSheetStock();
         }

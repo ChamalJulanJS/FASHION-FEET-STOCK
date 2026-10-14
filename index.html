@@ -20,10 +20,78 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="index.css?v=2.2">
 
     <!-- HTML5 Camera Barcode Scanner for Mobile Devices -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <!-- Global Robust Hub Navigation Switcher -->
+    <script>
+        window.switchHubTab = function(tabName) {
+            const transferView = document.getElementById('transferWorkspaceView');
+            const reorderView = document.getElementById('reorderWorkspaceView');
+            const navTransfer = document.getElementById('navTabTransfer');
+            const navReorder = document.getElementById('navTabReorder');
+            const navHistory = document.getElementById('navTabHistory');
+            const mobNavTransfer = document.getElementById('mobNavTransferBtn');
+            const mobNavReorder = document.getElementById('mobNavReorderBtn');
+            const mobNavHistory = document.getElementById('mobNavHistoryBtn');
+
+            if (tabName === 'reorder') {
+                if (transferView) transferView.style.display = 'none';
+                if (reorderView) reorderView.style.display = 'block';
+                if (navReorder) navReorder.classList.add('active');
+                if (navTransfer) navTransfer.classList.remove('active');
+                if (navHistory) navHistory.classList.remove('active');
+                if (mobNavReorder) mobNavReorder.classList.add('active');
+                if (mobNavTransfer) mobNavTransfer.classList.remove('active');
+                if (mobNavHistory) mobNavHistory.classList.remove('active');
+                if (typeof initReorderHub === 'function') {
+                    initReorderHub();
+                }
+                const sInput = document.getElementById('reorderSearchInput');
+                if (sInput) setTimeout(() => sInput.focus(), 150);
+            } else if (tabName === 'history') {
+                if (transferView) transferView.style.display = 'block';
+                if (reorderView) reorderView.style.display = 'none';
+                if (navHistory) navHistory.classList.add('active');
+                if (navTransfer) navTransfer.classList.remove('active');
+                if (navReorder) navReorder.classList.remove('active');
+                if (mobNavHistory) mobNavHistory.classList.add('active');
+                if (mobNavTransfer) mobNavTransfer.classList.remove('active');
+                if (mobNavReorder) mobNavReorder.classList.remove('active');
+                const target = document.getElementById('historySection');
+                if (target) target.scrollIntoView({ behavior: 'smooth' });
+            } else {
+                if (transferView) transferView.style.display = 'block';
+                if (reorderView) reorderView.style.display = 'none';
+                if (navTransfer) navTransfer.classList.add('active');
+                if (navReorder) navReorder.classList.remove('active');
+                if (navHistory) navHistory.classList.remove('active');
+                if (mobNavTransfer) mobNavTransfer.classList.add('active');
+                if (mobNavReorder) mobNavReorder.classList.remove('active');
+                if (mobNavHistory) mobNavHistory.classList.remove('active');
+            }
+        };
+
+        (function() {
+            function checkHash() {
+                if (window.location.hash.includes('reorder')) {
+                    window.switchHubTab('reorder');
+                } else if (window.location.hash.includes('history')) {
+                    window.switchHubTab('history');
+                } else if (window.location.hash.includes('transfer')) {
+                    window.switchHubTab('transfer');
+                }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', checkHash);
+            } else {
+                checkHash();
+            }
+            window.addEventListener('hashchange', checkHash);
+        })();
+    </script>
 </head>
 <body class="dark-theme">
     <!-- Ambient Background Glow Effects -->
@@ -53,21 +121,21 @@
 
             <!-- Hub Quick Nav Links -->
             <nav class="hub-nav">
-                <a href="#transferSection" class="nav-tab active" id="navTabTransfer">
+                <button type="button" class="nav-tab active" id="navTabTransfer" onclick="window.switchHubTab('transfer')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/><polyline points="8 16 12 12 16 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg>
-                    New Transfer
-                </a>
-                <a href="#reorderSection" class="nav-tab" id="navTabReorder">
+                    <span>New Transfer</span>
+                </button>
+                <button type="button" class="nav-tab" id="navTabReorder" onclick="window.switchHubTab('reorder')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    📦 Stock & Reorder Hub
-                </a>
-                <a href="#historySection" class="nav-tab" id="navTabHistory">
+                    <span>📦 Stock & Reorder Hub</span>
+                </button>
+                <button type="button" class="nav-tab" id="navTabHistory" onclick="window.switchHubTab('history')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    Transfer History & Slips
-                </a>
+                    <span>Transfer History</span>
+                </button>
                 <a href="transfer_receiver.html" class="nav-tab nav-ext" title="Open Transfer Receiver to split generic sizes">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Size Receiver
+                    <span>Size Receiver</span>
                 </a>
             </nav>
         </div>
@@ -1199,14 +1267,14 @@
 
     <!-- Mobile Native Bottom Navigation Bar (iOS & Android App Bar) -->
     <nav class="mobile-bottom-nav no-print" id="mobileBottomNav">
-        <a href="#transferSection" class="mobile-nav-item active" id="mobNavTransferBtn">
+        <button type="button" class="mobile-nav-item active" id="mobNavTransferBtn" onclick="window.switchHubTab('transfer')">
             <span class="mob-nav-icon">📦</span>
             <span class="mob-nav-label">Transfer</span>
-        </a>
-        <a href="#reorderSection" class="mobile-nav-item" id="mobNavReorderBtn">
+        </button>
+        <button type="button" class="mobile-nav-item" id="mobNavReorderBtn" onclick="window.switchHubTab('reorder')">
             <span class="mob-nav-icon">📊</span>
             <span class="mob-nav-label">Reorder</span>
-        </a>
+        </button>
         <a href="#cartSection" class="mobile-nav-item" id="mobNavCartBtn">
             <span class="mob-badge-wrapper">
                 <span class="mob-nav-icon">🛒</span>
@@ -1214,10 +1282,10 @@
             </span>
             <span class="mob-nav-label">Batch Cart</span>
         </a>
-        <a href="#historySection" class="mobile-nav-item" id="mobNavHistoryBtn">
+        <button type="button" class="mobile-nav-item" id="mobNavHistoryBtn" onclick="window.switchHubTab('history')">
             <span class="mob-nav-icon">📜</span>
             <span class="mob-nav-label">History</span>
-        </a>
+        </button>
         <button type="button" class="mobile-nav-item" id="mobNavStaffBtn">
             <span class="mob-nav-icon">👥</span>
             <span class="mob-nav-label">Staff</span>
@@ -1227,6 +1295,6 @@
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2.2"></script>
 </body>
 </html>
