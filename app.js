@@ -2322,12 +2322,28 @@ function initReorderHub() {
         catSelect.innerHTML += `<option value="${c}">${c} (${catCounts.get(c)})</option>`;
     });
 
+    // Helper to update the print stock button label dynamically
+    const updatePrintBtnLabel = () => {
+        const btnLabel = document.getElementById('printStockBtnLabel');
+        if (!btnLabel) return;
+        const curLocId = state.reorder.selectedLocationId;
+        if (curLocId === 'ALL') {
+            btnLabel.textContent = 'Print Stock (All)';
+        } else {
+            const locObj = state.locations.find(l => l.id === curLocId);
+            const shortName = locObj ? (locObj.name.length > 12 ? locObj.name.slice(0, 11) + '…' : locObj.name) : 'Branch';
+            btnLabel.textContent = `Print Stock (${shortName})`;
+        }
+    };
+    updatePrintBtnLabel();
+
     // 4. Attach Event Listeners (Once)
     if (!state.reorder.isInitialized) {
         state.reorder.isInitialized = true;
 
         locSelect.addEventListener('change', () => {
             state.reorder.selectedLocationId = locSelect.value;
+            updatePrintBtnLabel();
             renderReorderCatalog();
             refreshReorderSheetStock();
         });
@@ -2381,10 +2397,48 @@ function initReorderHub() {
         document.getElementById('btnDirectWhatsApp')?.addEventListener('click', directWhatsAppOrder);
         document.getElementById('btnPrintPO')?.addEventListener('click', printReorderPO);
         document.getElementById('btnExportCSV')?.addEventListener('click', exportReorderCSV);
-        document.getElementById('btnExportCurrentStockCSV')?.addEventListener('click', exportCurrentStockCSV);
-        document.getElementById('btnPrintCurrentStockSheet')?.addEventListener('click', printCurrentStockSheet);
+        document.getElementById('btnExportCurrentStockCSV')?.addEventListener('click', openPrintStockModal);
+        document.getElementById('btnPrintCurrentStockSheet')?.addEventListener('click', openPrintStockModal);
         document.getElementById('btnCopyCurrentStockWhatsApp')?.addEventListener('click', copyCurrentStockWhatsApp);
         document.getElementById('fillAllCurrentStockBtn')?.addEventListener('click', fillAllCurrentStockInSheet);
+
+        // Branch Stock Print & Export Modal Events
+        document.getElementById('closePrintStockModalBtn')?.addEventListener('click', closePrintStockModal);
+        document.getElementById('printBranchStockModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'printBranchStockModal') closePrintStockModal();
+        });
+
+        document.getElementById('modalStockBranchSelect')?.addEventListener('change', updatePrintModalPreview);
+        document.getElementById('modalStockBrandSelect')?.addEventListener('change', updatePrintModalPreview);
+        document.getElementById('modalStockCategorySelect')?.addEventListener('change', updatePrintModalPreview);
+        document.getElementById('modalStockStatusSelect')?.addEventListener('change', updatePrintModalPreview);
+
+        document.getElementById('modalDoPrintSheetBtn')?.addEventListener('click', () => {
+            const branch = document.getElementById('modalStockBranchSelect')?.value;
+            const brand = document.getElementById('modalStockBrandSelect')?.value;
+            const cat = document.getElementById('modalStockCategorySelect')?.value;
+            const status = document.getElementById('modalStockStatusSelect')?.value;
+            closePrintStockModal();
+            printCurrentStockSheet(branch, brand, cat, status);
+        });
+
+        document.getElementById('modalDoExportCsvBtn')?.addEventListener('click', () => {
+            const branch = document.getElementById('modalStockBranchSelect')?.value;
+            const brand = document.getElementById('modalStockBrandSelect')?.value;
+            const cat = document.getElementById('modalStockCategorySelect')?.value;
+            const status = document.getElementById('modalStockStatusSelect')?.value;
+            closePrintStockModal();
+            exportCurrentStockCSV(branch, brand, cat, status);
+        });
+
+        document.getElementById('modalDoCopyWhatsAppBtn')?.addEventListener('click', () => {
+            const branch = document.getElementById('modalStockBranchSelect')?.value;
+            const brand = document.getElementById('modalStockBrandSelect')?.value;
+            const cat = document.getElementById('modalStockCategorySelect')?.value;
+            const status = document.getElementById('modalStockStatusSelect')?.value;
+            closePrintStockModal();
+            copyCurrentStockWhatsApp(branch, brand, cat, status);
+        });
 
         const notesInput = document.getElementById('sheetSupplierNotes');
         if (notesInput) {
@@ -2426,12 +2480,12 @@ function getVariantStock(variantId, locId) {
 /**
  * Compute matching shoe models and stock counts based on active filters
  */
-function getMatchingReorderModels() {
-    const brand = state.reorder.filterBrand;
-    const cat = state.reorder.filterCategory;
-    const status = state.reorder.filterStatus;
-    const q = state.reorder.searchQuery;
-    const locId = state.reorder.selectedLocationId;
+function getMatchingReorderModels(overrideBrand, overrideCat, overrideStatus, overrideQuery, overrideLocId) {
+    const brand = overrideBrand !== undefined ? overrideBrand : state.reorder.filterBrand;
+    const cat = overrideCat !== undefined ? overrideCat : state.reorder.filterCategory;
+    const status = overrideStatus !== undefined ? overrideStatus : state.reorder.filterStatus;
+    const q = overrideQuery !== undefined ? overrideQuery : state.reorder.searchQuery;
+    const locId = overrideLocId !== undefined ? overrideLocId : state.reorder.selectedLocationId;
 
     let matchingModels = [];
     let needsOrderCount = 0;
@@ -3158,16 +3212,119 @@ function exportReorderCSV() {
 }
 
 /**
+ * Branch Stock Print & Export Modal Controls
+ */
+function openPrintStockModal() {
+    const modal = document.getElementById('printBranchStockModal');
+    if (!modal) return;
+
+    const modalBranchSelect = document.getElementById('modalStockBranchSelect');
+    const modalBrandSelect = document.getElementById('modalStockBrandSelect');
+    const modalCatSelect = document.getElementById('modalStockCategorySelect');
+    const modalStatusSelect = document.getElementById('modalStockStatusSelect');
+
+    if (modalBranchSelect) {
+        modalBranchSelect.innerHTML = `<option value="ALL">🌐 All Branches Combined (සියලු ශාඛා)</option>`;
+        state.locations.forEach(loc => {
+            const isSelected = loc.id === state.reorder.selectedLocationId;
+            modalBranchSelect.innerHTML += `<option value="${loc.id}" ${isSelected ? 'selected' : ''}>🏬 ${loc.name}</option>`;
+        });
+        if (state.reorder.selectedLocationId === 'ALL') {
+            modalBranchSelect.value = 'ALL';
+        }
+    }
+
+    if (modalBrandSelect) {
+        const brandCounts = new Map();
+        state.catalog.forEach(v => {
+            const b = (v.products && v.products.brand ? v.products.brand.trim() : '') || 'Generic';
+            brandCounts.set(b, (brandCounts.get(b) || 0) + 1);
+        });
+        const sortedBrands = Array.from(brandCounts.keys()).sort((a, b) => a.localeCompare(b));
+        modalBrandSelect.innerHTML = `<option value="ALL">All Brands (සියල්ල)</option>`;
+        sortedBrands.forEach(b => {
+            const isSelected = b === state.reorder.filterBrand;
+            modalBrandSelect.innerHTML += `<option value="${b}" ${isSelected ? 'selected' : ''}>${b}</option>`;
+        });
+    }
+
+    if (modalCatSelect) {
+        const catCounts = new Map();
+        state.catalog.forEach(v => {
+            const c = (v.products && v.products.category ? v.products.category.trim() : '') || 'General';
+            catCounts.set(c, (catCounts.get(c) || 0) + 1);
+        });
+        const sortedCats = Array.from(catCounts.keys()).sort((a, b) => a.localeCompare(b));
+        modalCatSelect.innerHTML = `<option value="ALL">All Categories (සියල්ල)</option>`;
+        sortedCats.forEach(c => {
+            const isSelected = c === state.reorder.filterCategory;
+            modalCatSelect.innerHTML += `<option value="${c}" ${isSelected ? 'selected' : ''}>${c}</option>`;
+        });
+    }
+
+    if (modalStatusSelect) {
+        modalStatusSelect.value = state.reorder.filterStatus || 'ALL';
+    }
+
+    updatePrintModalPreview();
+    modal.style.display = 'flex';
+}
+
+function closePrintStockModal() {
+    const modal = document.getElementById('printBranchStockModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function updatePrintModalPreview() {
+    const branchSelect = document.getElementById('modalStockBranchSelect');
+    const brandSelect = document.getElementById('modalStockBrandSelect');
+    const catSelect = document.getElementById('modalStockCategorySelect');
+    const statusSelect = document.getElementById('modalStockStatusSelect');
+
+    const locId = branchSelect ? branchSelect.value : state.reorder.selectedLocationId;
+    const brand = brandSelect ? brandSelect.value : 'ALL';
+    const cat = catSelect ? catSelect.value : 'ALL';
+    const status = statusSelect ? statusSelect.value : 'ALL';
+
+    const locObj = state.locations.find(l => l.id === locId);
+    const branchName = locId === 'ALL' ? 'All Branches' : (locObj ? locObj.name : 'Branch');
+
+    const { matchingModels } = getMatchingReorderModels(brand, cat, status, undefined, locId);
+
+    let totalPairs = 0;
+    let totalRetail = 0;
+    matchingModels.forEach(m => {
+        totalPairs += m.totalStock;
+        totalRetail += (m.totalStock * m.sellingPrice);
+    });
+
+    const nameEl = document.getElementById('modalPreviewBranchName');
+    const modelsEl = document.getElementById('modalPreviewModelsCount');
+    const pairsEl = document.getElementById('modalPreviewTotalPairs');
+    const retailEl = document.getElementById('modalPreviewRetailVal');
+
+    if (nameEl) nameEl.textContent = branchName;
+    if (modelsEl) modelsEl.textContent = `${matchingModels.length} Styles`;
+    if (pairsEl) pairsEl.textContent = `${totalPairs} Pairs`;
+    if (retailEl) retailEl.textContent = `Rs. ${totalRetail.toLocaleString()}`;
+}
+
+/**
  * Export Current Live Stock of filtered shoe models to CSV / Excel
  */
-function exportCurrentStockCSV() {
-    const locId = state.reorder.selectedLocationId;
+function exportCurrentStockCSV(targetLocId, targetBrand, targetCat, targetStatus) {
+    const locId = targetLocId !== undefined ? targetLocId : state.reorder.selectedLocationId;
+    const brand = targetBrand !== undefined ? targetBrand : state.reorder.filterBrand;
+    const cat = targetCat !== undefined ? targetCat : state.reorder.filterCategory;
+    const status = targetStatus !== undefined ? targetStatus : state.reorder.filterStatus;
+
     const locObj = state.locations.find(l => l.id === locId);
     const branchName = locId === 'ALL' ? 'All_Branches' : (locObj ? locObj.name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Branch');
+    const branchDisplay = locId === 'ALL' ? 'All Branches Combined' : (locObj ? locObj.name : 'Branch');
     
-    const { matchingModels } = getMatchingReorderModels();
+    const { matchingModels } = getMatchingReorderModels(brand, cat, status, undefined, locId);
     if (!matchingModels || matchingModels.length === 0) {
-        showToast("No shoe models found with current filters.", "warning");
+        showToast(`No shoe models found for ${branchDisplay} with current filters.`, "warning");
         return;
     }
 
@@ -3185,7 +3342,7 @@ function exportCurrentStockCSV() {
             grandTotalRetail += retailVal;
             grandTotalCost += costVal;
 
-            csv += `"${locId === 'ALL' ? 'All Branches' : (locObj?.name || 'Branch')}","${m.brand}","${m.name}","${m.category}","${v.size || '-'}","${stock}","${v.barcode || ''}",${m.costPrice || 0},${m.sellingPrice || 0},${retailVal},${costVal}\n`;
+            csv += `"${branchDisplay}","${m.brand}","${m.name}","${m.category}","${v.size || '-'}","${stock}","${v.barcode || ''}",${m.costPrice || 0},${m.sellingPrice || 0},${retailVal},${costVal}\n`;
         });
     });
 
@@ -3195,24 +3352,28 @@ function exportCurrentStockCSV() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `FashionFeet_Current_Stock_${branchName}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `FashionFeet_Stock_${branchName}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast(`Current Stock CSV exported! (${grandTotalPairs} pairs)`, "success");
+    showToast(`Stock CSV for ${branchDisplay} exported! (${grandTotalPairs} pairs)`, "success");
 }
 
 /**
  * Print Live Stock Inventory Sheet
  */
-function printCurrentStockSheet() {
-    const locId = state.reorder.selectedLocationId;
+function printCurrentStockSheet(targetLocId, targetBrand, targetCat, targetStatus) {
+    const locId = targetLocId !== undefined ? targetLocId : state.reorder.selectedLocationId;
+    const brand = targetBrand !== undefined ? targetBrand : state.reorder.filterBrand;
+    const cat = targetCat !== undefined ? targetCat : state.reorder.filterCategory;
+    const status = targetStatus !== undefined ? targetStatus : state.reorder.filterStatus;
+
     const locObj = state.locations.find(l => l.id === locId);
     const branchName = locId === 'ALL' ? 'All Branches Combined' : (locObj ? locObj.name : 'Branch');
     
-    const { matchingModels } = getMatchingReorderModels();
+    const { matchingModels } = getMatchingReorderModels(brand, cat, status, undefined, locId);
     if (!matchingModels || matchingModels.length === 0) {
-        showToast("No shoe models found with current filters.", "warning");
+        showToast(`No shoe models found for ${branchName} with current filters.`, "warning");
         return;
     }
 
@@ -3262,13 +3423,14 @@ function printCurrentStockSheet() {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Fashion Feet — Live Stock Inventory Report</title>
+            <title>Fashion Feet — Live Stock Inventory Report (${branchName})</title>
             <style>
                 body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #1e293b; }
                 .report-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
                 .report-title { font-size: 20px; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; }
                 .report-sub { font-size: 13px; color: #64748b; margin-top: 3px; }
                 .meta-col { text-align: right; font-size: 12px; line-height: 1.5; }
+                .branch-pill { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 13px; }
                 table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                 th { background: #f1f5f9; padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
                 .total-bar { display: flex; justify-content: space-between; background: #e0e7ff; padding: 12px 16px; border-radius: 6px; margin-top: 20px; font-weight: 700; font-size: 14px; }
@@ -3281,12 +3443,12 @@ function printCurrentStockSheet() {
             <div class="report-header">
                 <div>
                     <div class="report-title">👟 FASHION FEET — LIVE STOCK INVENTORY REPORT</div>
-                    <div class="report-sub">Real-Time Multi-Branch Stock Matrix Sheet</div>
+                    <div class="report-sub">Real-Time Branch Stock Matrix & Valuation Sheet</div>
                 </div>
                 <div class="meta-col">
-                    <div><strong>Branch:</strong> ${branchName}</div>
+                    <div><strong>Branch:</strong> <span class="branch-pill">🏬 ${branchName}</span></div>
                     <div><strong>Date & Time:</strong> ${dateStr}</div>
-                    <div><strong>Filter:</strong> ${state.reorder.filterBrand !== 'ALL' ? state.reorder.filterBrand : 'All Brands'} • ${state.reorder.filterCategory !== 'ALL' ? state.reorder.filterCategory : 'All Categories'}</div>
+                    <div><strong>Filter:</strong> ${brand !== 'ALL' ? brand : 'All Brands'} • ${cat !== 'ALL' ? cat : 'All Categories'} • ${status !== 'ALL' ? status : 'All Levels'}</div>
                 </div>
             </div>
 
@@ -3329,14 +3491,18 @@ function printCurrentStockSheet() {
 /**
  * Copy Current Stock Summary to WhatsApp
  */
-function copyCurrentStockWhatsApp() {
-    const locId = state.reorder.selectedLocationId;
+function copyCurrentStockWhatsApp(targetLocId, targetBrand, targetCat, targetStatus) {
+    const locId = targetLocId !== undefined ? targetLocId : state.reorder.selectedLocationId;
+    const brand = targetBrand !== undefined ? targetBrand : state.reorder.filterBrand;
+    const cat = targetCat !== undefined ? targetCat : state.reorder.filterCategory;
+    const status = targetStatus !== undefined ? targetStatus : state.reorder.filterStatus;
+
     const locObj = state.locations.find(l => l.id === locId);
     const branchName = locId === 'ALL' ? 'All Branches Combined' : (locObj ? locObj.name : 'Branch');
     
-    const { matchingModels } = getMatchingReorderModels();
+    const { matchingModels } = getMatchingReorderModels(brand, cat, status, undefined, locId);
     if (!matchingModels || matchingModels.length === 0) {
-        showToast("No shoe models found with current filters.", "warning");
+        showToast(`No shoe models found for ${branchName} with current filters.`, "warning");
         return;
     }
 
@@ -3346,6 +3512,9 @@ function copyCurrentStockWhatsApp() {
     let text = `👟 *FASHION FEET — CURRENT STOCK LIST*\n`;
     text += `🏬 *Branch:* ${branchName}\n`;
     text += `📅 *Date:* ${dateStr}\n`;
+    if (brand !== 'ALL' || cat !== 'ALL') {
+        text += `🔍 *Filter:* ${brand !== 'ALL' ? brand : 'All Brands'} | ${cat !== 'ALL' ? cat : 'All Categories'}\n`;
+    }
     text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     matchingModels.forEach(m => {
@@ -3361,7 +3530,7 @@ function copyCurrentStockWhatsApp() {
 
     navigator.clipboard.writeText(text).then(() => {
         if (typeof SoundFx !== 'undefined' && SoundFx.playSuccessChime) SoundFx.playSuccessChime();
-        showToast(`Current Stock copied for WhatsApp! (${totalPairs} pairs)`, "success");
+        showToast(`Current Stock for ${branchName} copied for WhatsApp! (${totalPairs} pairs)`, "success");
     }).catch(() => {
         prompt("Copy this stock summary:", text);
     });
@@ -3380,6 +3549,9 @@ window._reorderHub = {
     fillAllCurrentStock: fillAllCurrentStockInSheet,
     addOneAll: addOneToAllSizes,
     sendToTransfer: sendModelToTransfer,
+    openPrintStockModal: openPrintStockModal,
+    closePrintStockModal: closePrintStockModal,
+    updatePrintModalPreview: updatePrintModalPreview,
     exportCurrentStockCSV: exportCurrentStockCSV,
     printCurrentStockSheet: printCurrentStockSheet,
     copyCurrentStockWhatsApp: copyCurrentStockWhatsApp

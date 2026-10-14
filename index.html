@@ -20,7 +20,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="index.css?v=3.2">
+    <link rel="stylesheet" href="index.css?v=3.3">
 
     <!-- HTML5 Camera Barcode Scanner for Mobile Devices -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -28,7 +28,7 @@
     <!-- Auto Cache Flush on Deployment -->
     <script>
         (function() {
-            const APP_BUILD_VER = '3.2';
+            const APP_BUILD_VER = '3.3';
             if (localStorage.getItem('ff_build_v') !== APP_BUILD_VER) {
                 localStorage.setItem('ff_build_v', APP_BUILD_VER);
                 if ('caches' in window) {
@@ -810,7 +810,7 @@
                                     <span>📥</span> Stock CSV
                                 </button>
                                 <button type="button" class="btn btn-sm btn-outline-purple" id="btnPrintCurrentStockSheet" title="Print Live Stock Inventory Sheet">
-                                    <span>🖨️</span> Print Stock
+                                    <span>🖨️</span> <span id="printStockBtnLabel">Print Stock</span>
                                 </button>
                                 <button type="button" class="btn btn-sm btn-outline-whatsapp" id="btnCopyCurrentStockWhatsApp" title="Copy Current Stock summary for WhatsApp">
                                     <span>📲</span> WhatsApp
@@ -900,6 +900,92 @@
             </section>
         </div><!-- /#reorderWorkspaceView -->
     </main>
+
+    <!-- Branch Stock Print & Export Modal -->
+    <div class="modal-overlay" id="printBranchStockModal" style="display: none;">
+        <div class="modal-card glass-panel print-stock-modal-card">
+            <div class="modal-card-header">
+                <div class="header-icon-title">
+                    <span class="modal-title-icon">🖨️</span>
+                    <div>
+                        <h3>Print & Export Branch Stock Report</h3>
+                        <span class="modal-sub">Select branch location and filters to generate accurate live stock reports</span>
+                    </div>
+                </div>
+                <button type="button" class="close-card-btn" id="closePrintStockModalBtn">&times;</button>
+            </div>
+
+            <div class="print-stock-modal-body">
+                <!-- Branch Selector -->
+                <div class="form-group-modal">
+                    <label for="modalStockBranchSelect"><strong>🏬 Select Branch Location (ශාඛාව තෝරන්න):</strong></label>
+                    <select id="modalStockBranchSelect" class="glass-select modal-select">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+
+                <!-- Secondary Filters Row -->
+                <div class="modal-filters-grid">
+                    <div class="form-group-modal">
+                        <label for="modalStockBrandSelect">Brand (වර්ගය):</label>
+                        <select id="modalStockBrandSelect" class="glass-select modal-select">
+                            <option value="ALL">All Brands (සියල්ල)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group-modal">
+                        <label for="modalStockCategorySelect">Category (කාණ්ඩය):</label>
+                        <select id="modalStockCategorySelect" class="glass-select modal-select">
+                            <option value="ALL">All Categories</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group-modal">
+                        <label for="modalStockStatusSelect">Stock Status:</label>
+                        <select id="modalStockStatusSelect" class="glass-select modal-select">
+                            <option value="ALL">All Stock Levels</option>
+                            <option value="OUT_OF_STOCK">🚨 Has 0 Stock Sizes</option>
+                            <option value="LOW_STOCK">⚠️ Low Stock (&lt; 3)</option>
+                            <option value="IN_STOCK">✅ Well Stocked (3+)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Live Summary Pill Box -->
+                <div class="modal-stock-preview-box" id="modalStockPreviewBox">
+                    <div class="preview-stat-item">
+                        <span class="stat-label">Selected Branch</span>
+                        <strong class="stat-val highlight" id="modalPreviewBranchName">Shoe Gallery</strong>
+                    </div>
+                    <div class="preview-stat-item">
+                        <span class="stat-label">Matching Models</span>
+                        <strong class="stat-val" id="modalPreviewModelsCount">0 Styles</strong>
+                    </div>
+                    <div class="preview-stat-item">
+                        <span class="stat-label">Total Stock</span>
+                        <strong class="stat-val text-success" id="modalPreviewTotalPairs">0 Pairs</strong>
+                    </div>
+                    <div class="preview-stat-item">
+                        <span class="stat-label">Retail Value</span>
+                        <strong class="stat-val text-cyan" id="modalPreviewRetailVal">Rs. 0</strong>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="modal-stock-actions-grid">
+                    <button type="button" class="btn btn-primary btn-modal-action" id="modalDoPrintSheetBtn">
+                        <span>🖨️</span> Print Inventory Sheet
+                    </button>
+                    <button type="button" class="btn btn-outline-cyan btn-modal-action" id="modalDoExportCsvBtn">
+                        <span>📥</span> Export to Excel / CSV
+                    </button>
+                    <button type="button" class="btn btn-outline-whatsapp btn-modal-action" id="modalDoCopyWhatsAppBtn">
+                        <span>📲</span> Copy for WhatsApp
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Camera Barcode Scanner Modal (Android & iOS Phone Camera) -->
     <div class="modal-overlay" id="cameraScannerModal" style="display: none;">
@@ -1331,6 +1417,6 @@
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="app.js?v=3.2"></script>
+    <script src="app.js?v=3.3"></script>
 </body>
 </html>
