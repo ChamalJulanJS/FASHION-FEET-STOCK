@@ -53,11 +53,15 @@
 
             <!-- Hub Quick Nav Links -->
             <nav class="hub-nav">
-                <a href="#transferSection" class="nav-tab active">
+                <a href="#transferSection" class="nav-tab active" id="navTabTransfer">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/><polyline points="8 16 12 12 16 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg>
                     New Transfer
                 </a>
-                <a href="#historySection" class="nav-tab">
+                <a href="#reorderSection" class="nav-tab" id="navTabReorder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    📦 Stock & Reorder Hub
+                </a>
+                <a href="#historySection" class="nav-tab" id="navTabHistory">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                     Transfer History & Slips
                 </a>
@@ -195,7 +199,7 @@
 
     <!-- Main Workspace Container -->
     <main class="main-container" id="transferSection">
-        
+        <div id="transferWorkspaceView">
         <!-- STEP 1: Branch Route Selection Card -->
         <section class="card route-card glass-panel">
             <div class="card-header route-header">
@@ -629,6 +633,168 @@
                 </table>
             </div>
         </section>
+        </div><!-- /#transferWorkspaceView -->
+
+        <!-- REORDER WORKSPACE VIEW -->
+        <div id="reorderWorkspaceView" style="display: none;">
+            <section class="card glass-panel reorder-container" id="reorderSection">
+                <!-- Section Header -->
+                <div class="card-header reorder-header">
+                    <div class="header-title-box">
+                        <div class="step-badge reorder-step-badge">STOCK & REORDER MATRIX</div>
+                        <div>
+                            <h2>Footwear Stock Matrix & Smart Reorder Hub</h2>
+                            <span class="subtitle">Check live branch stock by Brand, Category & Article Code • Select codes to drop into Supplier Reorder Form</span>
+                        </div>
+                    </div>
+                    <div class="reorder-header-badges">
+                        <span class="reorder-stat-pill" id="reorderTotalStylesCount">Styles: <strong>0</strong></span>
+                        <span class="reorder-stat-pill warning" id="reorderNeedsOrderCount">Needs Reorder: <strong>0</strong></span>
+                    </div>
+                </div>
+
+                <!-- Filter Control Bar -->
+                <div class="reorder-toolbar">
+                    <div class="toolbar-row-top">
+                        <!-- Branch Location Selector -->
+                        <div class="reorder-filter-item">
+                            <label for="reorderLocationSelect">Branch / Location:</label>
+                            <select id="reorderLocationSelect" class="glass-select">
+                                <option value="ALL">🌐 All Branches Combined</option>
+                            </select>
+                        </div>
+
+                        <!-- Brand Filter -->
+                        <div class="reorder-filter-item">
+                            <label for="reorderBrandSelect">Brand (වර්ගය):</label>
+                            <select id="reorderBrandSelect" class="glass-select">
+                                <option value="ALL">All Brands (සියලු Brands)</option>
+                            </select>
+                        </div>
+
+                        <!-- Category Filter -->
+                        <div class="reorder-filter-item">
+                            <label for="reorderCategorySelect">Category (කාණ්ඩය):</label>
+                            <select id="reorderCategorySelect" class="glass-select">
+                                <option value="ALL">All Categories (සියලු කාණ්ඩ)</option>
+                            </select>
+                        </div>
+
+                        <!-- Stock Status Filter -->
+                        <div class="reorder-filter-item">
+                            <label for="reorderStatusSelect">Stock Status:</label>
+                            <select id="reorderStatusSelect" class="glass-select">
+                                <option value="ALL">All Stock Levels (සියල්ල)</option>
+                                <option value="OUT_OF_STOCK">🚨 Has Out-of-Stock Sizes (0)</option>
+                                <option value="LOW_STOCK">⚠️ Low Stock (< 3 pairs)</option>
+                                <option value="IN_STOCK">✅ Well Stocked (3+ pairs)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="toolbar-row-search">
+                        <div class="reorder-search-box">
+                            <span class="search-icon">🔍</span>
+                            <input 
+                                type="text" 
+                                id="reorderSearchInput" 
+                                class="reorder-search-input" 
+                                placeholder="Search by Shoe Code, Article #, or Name (e.g. SFW006, AS8006, 032-16, RD015)..." 
+                                autocomplete="off"
+                            >
+                            <button type="button" class="btn-clear-search" id="reorderClearSearchBtn" style="display: none;">✕</button>
+                        </div>
+                        <div class="reorder-search-stats" id="reorderFilterStatsTag">
+                            Showing 0 styles
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Workspace: 2-Column Split -->
+                <div class="reorder-split-grid">
+                    <!-- LEFT: Shoe Styles & Size Matrix Explorer -->
+                    <div class="reorder-catalog-col">
+                        <div class="catalog-col-header">
+                            <h3>👟 Shoe Models & Size Stock</h3>
+                            <span class="hint-text">👉 Click any code card to drop it directly into the Reorder Form</span>
+                        </div>
+                        <div class="reorder-catalog-list" id="reorderCatalogList">
+                            <!-- Rendered dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Active Reorder Form / Purchase Order Sheet -->
+                    <div class="reorder-sheet-col">
+                        <div class="reorder-sheet-panel glass-panel" id="reorderSheetPanel">
+                            <div class="sheet-header">
+                                <div class="sheet-title-box">
+                                    <span class="sheet-icon">📋</span>
+                                    <div>
+                                        <h3>Supplier Reorder Sheet</h3>
+                                        <span class="sheet-sub" id="sheetSubTitle">0 Models • 0 Total Pairs</span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-danger-outline" id="clearReorderSheetBtn" title="Clear all items in order sheet">
+                                    🗑️ Clear Form
+                                </button>
+                            </div>
+
+                            <!-- Empty State Placeholder -->
+                            <div class="sheet-empty-state" id="sheetEmptyState">
+                                <div class="empty-icon">👟</div>
+                                <h4>Reorder Sheet is Empty</h4>
+                                <p>Select or click any shoe code on the left to drop its size curve into this Reorder Form.</p>
+                            </div>
+
+                            <!-- List of Selected Articles -->
+                            <div class="sheet-items-list" id="sheetItemsList" style="display: none;">
+                                <!-- Dynamically rendered reorder cards -->
+                            </div>
+
+                            <!-- Order Sheet Footer & Summary -->
+                            <div class="sheet-footer" id="sheetFooter" style="display: none;">
+                                <div class="sheet-summary-box">
+                                    <div class="summary-line">
+                                        <span>Models: <strong id="sheetSummaryModels">0</strong></span>
+                                    </div>
+                                    <div class="summary-line">
+                                        <span>Total Pairs: <strong class="highlight-pairs" id="sheetSummaryPairs">0 prs</strong></span>
+                                    </div>
+                                    <div class="summary-line">
+                                        <span>Est. Cost: <strong class="highlight-cost" id="sheetSummaryCost">Rs. 0.00</strong></span>
+                                    </div>
+                                </div>
+
+                                <div class="sheet-notes-box">
+                                    <input 
+                                        type="text" 
+                                        id="sheetSupplierNotes" 
+                                        class="glass-input sheet-notes-input" 
+                                        placeholder="Supplier Name / Urgent Note (e.g. Melizza Factory - Urgent Delivery)..."
+                                    >
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="sheet-actions-grid">
+                                    <button type="button" class="btn btn-whatsapp" id="btnCopyWhatsApp">
+                                        <span>📲</span> Copy WhatsApp Order
+                                    </button>
+                                    <button type="button" class="btn btn-success" id="btnDirectWhatsApp">
+                                        <span>💬</span> Open WhatsApp
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" id="btnPrintPO">
+                                        <span>🖨️</span> Print Order Slip
+                                    </button>
+                                    <button type="button" class="btn btn-outline" id="btnExportCSV">
+                                        <span>📥</span> CSV / Excel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div><!-- /#reorderWorkspaceView -->
     </main>
 
     <!-- Camera Barcode Scanner Modal (Android & iOS Phone Camera) -->
@@ -1036,6 +1202,10 @@
         <a href="#transferSection" class="mobile-nav-item active" id="mobNavTransferBtn">
             <span class="mob-nav-icon">📦</span>
             <span class="mob-nav-label">Transfer</span>
+        </a>
+        <a href="#reorderSection" class="mobile-nav-item" id="mobNavReorderBtn">
+            <span class="mob-nav-icon">📊</span>
+            <span class="mob-nav-label">Reorder</span>
         </a>
         <a href="#cartSection" class="mobile-nav-item" id="mobNavCartBtn">
             <span class="mob-badge-wrapper">

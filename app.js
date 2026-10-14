@@ -817,6 +817,10 @@ async function syncCatalogAndStock() {
         if (state.stagedItem) {
             renderStagedItemStock(state.stagedItem);
         }
+        if (state.reorder && state.reorder.isInitialized) {
+            renderReorderCatalog();
+            refreshReorderSheetStock();
+        }
 
     } catch (err) {
         console.error("Sync error:", err);
@@ -2123,6 +2127,56 @@ function setupEventListeners() {
         });
     }
 
+    // Desktop and Mobile Navigation for Transfer & Reorder Hub
+    const navTabTransfer = document.getElementById('navTabTransfer');
+    const navTabReorder = document.getElementById('navTabReorder');
+    const navTabHistory = document.getElementById('navTabHistory');
+    const transferView = document.getElementById('transferWorkspaceView');
+    const reorderView = document.getElementById('reorderWorkspaceView');
+    const mobNavReorderBtn = document.getElementById('mobNavReorderBtn');
+
+    window.switchHubTab = function(tabName) {
+        if (tabName === 'reorder') {
+            if (transferView) transferView.style.display = 'none';
+            if (reorderView) reorderView.style.display = 'block';
+            navTabReorder?.classList.add('active');
+            navTabTransfer?.classList.remove('active');
+            navTabHistory?.classList.remove('active');
+            if (mobNavReorderBtn) setActiveMobileNav(mobNavReorderBtn);
+            initReorderHub();
+            const sInput = document.getElementById('reorderSearchInput');
+            if (sInput) setTimeout(() => sInput.focus(), 150);
+        } else if (tabName === 'history') {
+            if (transferView) transferView.style.display = 'block';
+            if (reorderView) reorderView.style.display = 'none';
+            navTabHistory?.classList.add('active');
+            navTabTransfer?.classList.remove('active');
+            navTabReorder?.classList.remove('active');
+            if (el.mobNavHistoryBtn) setActiveMobileNav(el.mobNavHistoryBtn);
+            const target = document.getElementById('historySection');
+            if (target) target.scrollIntoView({ behavior: 'smooth' });
+        } else {
+            if (transferView) transferView.style.display = 'block';
+            if (reorderView) reorderView.style.display = 'none';
+            navTabTransfer?.classList.add('active');
+            navTabReorder?.classList.remove('active');
+            navTabHistory?.classList.remove('active');
+            if (el.mobNavTransferBtn) setActiveMobileNav(el.mobNavTransferBtn);
+            focusScanner();
+        }
+    };
+
+    navTabTransfer?.addEventListener('click', (e) => { e.preventDefault(); window.switchHubTab('transfer'); });
+    navTabReorder?.addEventListener('click', (e) => { e.preventDefault(); window.switchHubTab('reorder'); });
+    navTabHistory?.addEventListener('click', (e) => { e.preventDefault(); window.switchHubTab('history'); });
+
+    if (mobNavReorderBtn) {
+        mobNavReorderBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.switchHubTab('reorder');
+        });
+    }
+
     // Mobile Bottom Navigation Tabs
     const mobileNavItems = document.querySelectorAll('.mobile-nav-item');
     function setActiveMobileNav(activeEl) {
@@ -2194,6 +2248,802 @@ function showToast(message, type = "info") {
         setTimeout(() => toast.remove(), 260);
     }, 3800);
 }
+
+/**
+ * ==========================================================================
+ * 8. FOOTWEAR STOCK MATRIX & SMART REORDER HUB ENGINE
+ * Multi-Level Filtering (Brand/Category/Code), Real-Time Size Run Matrix,
+ * Direct Click-to-Order Sheet, Intelligent Low-Stock Auto-Fill,
+ * One-Click WhatsApp Supplier Order Generator & Printable PO Slip.
+ * ==========================================================================
+ */
+
+// Initialize Reorder State if not already defined
+if (!state.reorder) {
+    state.reorder = {
+        selectedLocationId: 'b9730905-c070-4ee8-960e-74d2fef1592b', // Default: Shoe Gallery
+        filterBrand: 'ALL',
+        filterCategory: 'ALL',
+        filterStatus: 'ALL', // 'ALL', 'OUT_OF_STOCK', 'LOW_STOCK', 'IN_STOCK'
+        searchQuery: '',
+        orderSheet: new Map(), // productId -> sheetItem
+        supplierNotes: '',
+        isInitialized: false
+    };
+}
+
+function initReorderHub() {
+    const locSelect = document.getElementById('reorderLocationSelect');
+    const brandSelect = document.getElementById('reorderBrandSelect');
+    const catSelect = document.getElementById('reorderCategorySelect');
+    const statusSelect = document.getElementById('reorderStatusSelect');
+    const searchInput = document.getElementById('reorderSearchInput');
+    const clearSearchBtn = document.getElementById('reorderClearSearchBtn');
+
+    if (!locSelect || !brandSelect || !catSelect) return;
+
+    // 1. Populate Locations Dropdown
+    locSelect.innerHTML = `<option value="ALL">🌐 All Branches Combined (සියලු ශාඛා)</option>`;
+    state.locations.forEach(loc => {
+        const isDefault = loc.id === state.reorder.selectedLocationId;
+        locSelect.innerHTML += `<option value="${loc.id}" ${isDefault ? 'selected' : ''}>🏬 ${loc.name}</option>`;
+    });
+
+    // 2. Populate Brands Dropdown from Catalog
+    const brandCounts = new Map();
+    state.catalog.forEach(v => {
+        const b = (v.products && v.products.brand ? v.products.brand.trim() : '') || 'Generic';
+        brandCounts.set(b, (brandCounts.get(b) || 0) + 1);
+    });
+
+    const sortedBrands = Array.from(brandCounts.keys()).sort((a, b) => a.localeCompare(b));
+    brandSelect.innerHTML = `<option value="ALL">All Brands (සියලු Brands)</option>`;
+    sortedBrands.forEach(b => {
+        brandSelect.innerHTML += `<option value="${b}">${b} (${brandCounts.get(b)})</option>`;
+    });
+
+    // 3. Populate Categories Dropdown from Catalog
+    const catCounts = new Map();
+    state.catalog.forEach(v => {
+        const c = (v.products && v.products.category ? v.products.category.trim() : '') || 'General';
+        catCounts.set(c, (catCounts.get(c) || 0) + 1);
+    });
+
+    const sortedCats = Array.from(catCounts.keys()).sort((a, b) => a.localeCompare(b));
+    catSelect.innerHTML = `<option value="ALL">All Categories (සියලු කාණ්ඩ)</option>`;
+    sortedCats.forEach(c => {
+        catSelect.innerHTML += `<option value="${c}">${c} (${catCounts.get(c)})</option>`;
+    });
+
+    // 4. Attach Event Listeners (Once)
+    if (!state.reorder.isInitialized) {
+        state.reorder.isInitialized = true;
+
+        locSelect.addEventListener('change', () => {
+            state.reorder.selectedLocationId = locSelect.value;
+            renderReorderCatalog();
+            refreshReorderSheetStock();
+        });
+
+        brandSelect.addEventListener('change', () => {
+            state.reorder.filterBrand = brandSelect.value;
+            renderReorderCatalog();
+        });
+
+        catSelect.addEventListener('change', () => {
+            state.reorder.filterCategory = catSelect.value;
+            renderReorderCatalog();
+        });
+
+        statusSelect.addEventListener('change', () => {
+            state.reorder.filterStatus = statusSelect.value;
+            renderReorderCatalog();
+        });
+
+        let searchDebounce = null;
+        searchInput.addEventListener('input', () => {
+            if (clearSearchBtn) clearSearchBtn.style.display = searchInput.value ? 'block' : 'none';
+            if (searchDebounce) clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => {
+                state.reorder.searchQuery = searchInput.value.trim().toLowerCase();
+                renderReorderCatalog();
+            }, 180);
+        });
+
+        if (clearSearchBtn) {
+            clearSearchBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                clearSearchBtn.style.display = 'none';
+                state.reorder.searchQuery = '';
+                renderReorderCatalog();
+                searchInput.focus();
+            });
+        }
+
+        document.getElementById('clearReorderSheetBtn')?.addEventListener('click', () => {
+            if (state.reorder.orderSheet.size === 0) return;
+            if (confirm("Clear all items in this Reorder Sheet?")) {
+                state.reorder.orderSheet.clear();
+                renderReorderSheet();
+                renderReorderCatalog();
+                showToast("Reorder Sheet cleared.", "info");
+            }
+        });
+
+        document.getElementById('btnCopyWhatsApp')?.addEventListener('click', copyWhatsAppOrder);
+        document.getElementById('btnDirectWhatsApp')?.addEventListener('click', directWhatsAppOrder);
+        document.getElementById('btnPrintPO')?.addEventListener('click', printReorderPO);
+        document.getElementById('btnExportCSV')?.addEventListener('click', exportReorderCSV);
+
+        const notesInput = document.getElementById('sheetSupplierNotes');
+        if (notesInput) {
+            notesInput.addEventListener('input', () => {
+                state.reorder.supplierNotes = notesInput.value;
+            });
+        }
+    }
+
+    renderReorderCatalog();
+    renderReorderSheet();
+}
+
+/**
+ * Natural Size Sorter (handles numeric and alphanumeric sizes: 36, 37, 38... or 6, 7, 8... or S, M, L)
+ */
+function sortVariantsBySize(variants) {
+    return [...variants].sort((a, b) => {
+        const szA = (a.size || '').trim();
+        const szB = (b.size || '').trim();
+        const numA = parseFloat(szA);
+        const numB = parseFloat(szB);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return szA.localeCompare(szB);
+    });
+}
+
+function getVariantStock(variantId, locId) {
+    if (locId === 'ALL') {
+        let total = 0;
+        state.locations.forEach(loc => {
+            total += (state.stockMap.get(`${variantId}_${loc.id}`) || 0);
+        });
+        return total;
+    }
+    return state.stockMap.get(`${variantId}_${locId}`) || 0;
+}
+
+/**
+ * Render the filtered catalog cards
+ */
+function renderReorderCatalog() {
+    const listEl = document.getElementById('reorderCatalogList');
+    const totalStylesTag = document.getElementById('reorderTotalStylesCount');
+    const needsOrderTag = document.getElementById('reorderNeedsOrderCount');
+    const filterStatsTag = document.getElementById('reorderFilterStatsTag');
+
+    if (!listEl) return;
+
+    const brand = state.reorder.filterBrand;
+    const cat = state.reorder.filterCategory;
+    const status = state.reorder.filterStatus;
+    const q = state.reorder.searchQuery;
+    const locId = state.reorder.selectedLocationId;
+
+    let matchingModels = [];
+    let needsOrderCount = 0;
+
+    for (const [productId, variants] of state.productsMap.entries()) {
+        if (!variants || variants.length === 0) continue;
+        const p = variants[0].products || {};
+        const pName = p.name || variants[0].sku || 'Shoe Model';
+        const pBrand = p.brand || 'Generic';
+        const pCat = p.category || 'General';
+
+        // 1. Filter Brand
+        if (brand !== 'ALL' && pBrand !== brand) continue;
+
+        // 2. Filter Category
+        if (cat !== 'ALL' && pCat !== cat) continue;
+
+        // 3. Search query filter
+        if (q) {
+            const matchName = pName.toLowerCase().includes(q);
+            const matchBrand = pBrand.toLowerCase().includes(q);
+            const matchCat = pCat.toLowerCase().includes(q);
+            const matchSku = variants.some(v => (v.sku && v.sku.toLowerCase().includes(q)) || (v.barcode && v.barcode.toLowerCase().includes(q)));
+            if (!matchName && !matchBrand && !matchCat && !matchSku) continue;
+        }
+
+        // Calculate size-wise stock
+        let modelTotalStock = 0;
+        let hasZeroStock = false;
+        let hasLowStock = false;
+
+        const sortedVars = sortVariantsBySize(variants).map(v => {
+            const stock = getVariantStock(v.id, locId);
+            modelTotalStock += stock;
+            if (stock === 0) hasZeroStock = true;
+            if (stock <= 2) hasLowStock = true;
+            return {
+                ...v,
+                stock: stock
+            };
+        });
+
+        if (hasZeroStock) needsOrderCount++;
+
+        // 4. Filter Status
+        if (status === 'OUT_OF_STOCK' && !hasZeroStock) continue;
+        if (status === 'LOW_STOCK' && !hasLowStock) continue;
+        if (status === 'IN_STOCK' && hasLowStock) continue;
+
+        matchingModels.push({
+            productId: productId,
+            name: pName,
+            brand: pBrand,
+            category: pCat,
+            totalStock: modelTotalStock,
+            hasZeroStock: hasZeroStock,
+            hasLowStock: hasLowStock,
+            sellingPrice: Number(variants[0].selling_price) || 0,
+            costPrice: Number(variants[0].cost_price) || 0,
+            variants: sortedVars
+        });
+    }
+
+    // Update Counts
+    if (totalStylesTag) totalStylesTag.innerHTML = `Styles: <strong>${matchingModels.length}</strong>`;
+    if (needsOrderTag) needsOrderTag.innerHTML = `Needs Reorder: <strong>${needsOrderCount}</strong>`;
+    if (filterStatsTag) filterStatsTag.textContent = `Showing ${matchingModels.length} of ${state.productsMap.size} styles`;
+
+    // Render Cards
+    if (matchingModels.length === 0) {
+        listEl.innerHTML = `
+            <div style="text-align: center; padding: 3rem 1rem; color: var(--text-dim);">
+                <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
+                <div style="font-weight: 600; color: var(--text-muted); font-size: 0.95rem;">No matching shoe models found</div>
+                <div style="font-size: 0.8rem; margin-top: 0.25rem;">Try changing your Brand, Category, or Search keyword.</div>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    matchingModels.forEach(m => {
+        const inSheet = state.reorder.orderSheet.has(m.productId);
+
+        let sizePillsHtml = '';
+        m.variants.forEach(v => {
+            let statusCls = 'good-stock';
+            if (v.stock === 0) statusCls = 'out-stock';
+            else if (v.stock <= 2) statusCls = 'low-stock';
+
+            sizePillsHtml += `
+                <div class="size-stock-box ${statusCls}" title="Size ${v.size || '-'}: ${v.stock} in stock">
+                    <span class="sz-label">Sz ${v.size || '-'}</span>
+                    <span class="sz-qty">${v.stock}</span>
+                </div>
+            `;
+        });
+
+        html += `
+            <div class="reorder-model-card ${inSheet ? 'in-sheet' : ''}" data-product-id="${m.productId}" onclick="window._reorderHub.toggleCode('${m.productId}')">
+                <div class="model-card-top">
+                    <div class="model-title-wrap">
+                        <h4>${m.name}</h4>
+                        <div class="model-meta-row">
+                            <span class="brand-badge">${m.brand}</span>
+                            <span class="category-tag">${m.category}</span>
+                            <span class="price-tag">• Sell: Rs. ${m.sellingPrice.toLocaleString()}</span>
+                            ${m.costPrice > 0 ? `<span class="price-tag" style="color:#64748b;">(Cost: Rs. ${m.costPrice.toLocaleString()})</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="model-card-stock-sum">
+                        <span>Total: <strong>${m.totalStock} prs</strong></span>
+                    </div>
+                </div>
+
+                <!-- Size Run Strip -->
+                <div class="size-run-strip">
+                    ${sizePillsHtml}
+                </div>
+
+                <div class="model-card-actions">
+                    <button type="button" class="btn-add-to-sheet" onclick="event.stopPropagation(); window._reorderHub.addCode('${m.productId}')">
+                        ${inSheet ? '✓ Selected in Order Sheet' : '➕ Add Code to Reorder'}
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+
+    listEl.innerHTML = html;
+}
+
+/**
+ * Add a shoe model to the Reorder Form (Order Sheet)
+ */
+function addCodeToReorder(productId) {
+    if (state.reorder.orderSheet.has(productId)) {
+        // Already in sheet: highlight it
+        showToast("Already in Reorder Sheet. Adjust sizes on the right panel.", "info");
+        const elItem = document.getElementById(`sheetItem_${productId}`);
+        if (elItem && typeof elItem.scrollIntoView === "function") elItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+    }
+
+    const variants = state.productsMap.get(productId);
+    if (!variants || variants.length === 0) return;
+
+    const p = variants[0].products || {};
+    const pName = p.name || variants[0].sku || 'Shoe Model';
+    const pBrand = p.brand || 'Generic';
+    const pCat = p.category || 'General';
+    const locId = state.reorder.selectedLocationId;
+
+    const sortedVars = sortVariantsBySize(variants);
+
+    const sheetItem = {
+        productId: productId,
+        name: pName,
+        brand: pBrand,
+        category: pCat,
+        sellingPrice: Number(variants[0].selling_price) || 0,
+        costPrice: Number(variants[0].cost_price) || 0,
+        variants: sortedVars.map(v => {
+            const stock = getVariantStock(v.id, locId);
+            return {
+                variantId: v.id,
+                sku: v.sku,
+                size: v.size || '-',
+                colour: v.colour || '-',
+                currentStock: stock,
+                costPrice: Number(v.cost_price) || Number(variants[0].cost_price) || 0,
+                // Intelligent suggestion: if 0 stock, suggest 3 pairs; if low stock, suggest 2 pairs; else 0
+                orderQty: stock === 0 ? 3 : (stock <= 2 ? 2 : 0)
+            };
+        })
+    };
+
+    state.reorder.orderSheet.set(productId, sheetItem);
+
+    renderReorderSheet();
+    renderReorderCatalog();
+
+    if (typeof SoundEffects !== 'undefined' && SoundEffects.playPop) {
+        SoundEffects.playPop();
+    }
+
+    showToast(`Added ${sheetItem.brand} ${sheetItem.name} to Reorder Form!`, "success");
+
+    // Scroll new sheet item into view
+    setTimeout(() => {
+        const elItem = document.getElementById(`sheetItem_${productId}`);
+        if (elItem && typeof elItem.scrollIntoView === "function") elItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+}
+
+function removeCodeFromReorder(productId) {
+    state.reorder.orderSheet.delete(productId);
+    renderReorderSheet();
+    renderReorderCatalog();
+    showToast("Model removed from Reorder Sheet.", "info");
+}
+
+function toggleCodeInReorder(productId) {
+    if (state.reorder.orderSheet.has(productId)) {
+        removeCodeFromReorder(productId);
+    } else {
+        addCodeToReorder(productId);
+    }
+}
+
+/**
+ * Update stock counts of existing items in the order sheet if location changes
+ */
+function refreshReorderSheetStock() {
+    const locId = state.reorder.selectedLocationId;
+    for (const [productId, sheetItem] of state.reorder.orderSheet.entries()) {
+        sheetItem.variants.forEach(v => {
+            v.currentStock = getVariantStock(v.variantId, locId);
+        });
+    }
+    renderReorderSheet();
+}
+
+/**
+ * Stepper qty update for a specific size
+ */
+function updateSizeOrderQty(productId, variantId, delta, absoluteVal = null) {
+    const sheetItem = state.reorder.orderSheet.get(productId);
+    if (!sheetItem) return;
+
+    const v = sheetItem.variants.find(x => x.variantId === variantId);
+    if (!v) return;
+
+    if (absoluteVal !== null) {
+        v.orderQty = Math.max(0, parseInt(absoluteVal) || 0);
+    } else {
+        v.orderQty = Math.max(0, (v.orderQty || 0) + delta);
+    }
+
+    renderReorderSheet();
+}
+
+/**
+ * Quick Preset: Fill all sizes with 0 stock to target quantity (e.g. 3 pairs)
+ */
+function fillZeroStockForModel(productId, targetQty = 3) {
+    const sheetItem = state.reorder.orderSheet.get(productId);
+    if (!sheetItem) return;
+
+    let filledCount = 0;
+    sheetItem.variants.forEach(v => {
+        if (v.currentStock === 0) {
+            v.orderQty = targetQty;
+            filledCount++;
+        }
+    });
+
+    renderReorderSheet();
+    showToast(`Set ${targetQty} pairs for ${filledCount} out-of-stock size(s)!`, "success");
+}
+
+/**
+ * Quick Preset: Add +1 pair to all sizes
+ */
+function addOneToAllSizes(productId) {
+    const sheetItem = state.reorder.orderSheet.get(productId);
+    if (!sheetItem) return;
+
+    sheetItem.variants.forEach(v => {
+        v.orderQty = (v.orderQty || 0) + 1;
+    });
+
+    renderReorderSheet();
+    showToast("Added +1 pair to all sizes", "info");
+}
+
+/**
+ * Render the Right Panel Reorder Sheet
+ */
+function renderReorderSheet() {
+    const emptyState = document.getElementById('sheetEmptyState');
+    const itemsList = document.getElementById('sheetItemsList');
+    const footer = document.getElementById('sheetFooter');
+    const subTitle = document.getElementById('sheetSubTitle');
+
+    const summaryModels = document.getElementById('sheetSummaryModels');
+    const summaryPairs = document.getElementById('sheetSummaryPairs');
+    const summaryCost = document.getElementById('sheetSummaryCost');
+
+    if (!itemsList) return;
+
+    const count = state.reorder.orderSheet.size;
+
+    if (count === 0) {
+        if (emptyState) emptyState.style.display = 'block';
+        if (itemsList) itemsList.style.display = 'none';
+        if (footer) footer.style.display = 'none';
+        if (subTitle) subTitle.textContent = "0 Models • 0 Total Pairs";
+        return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+    if (itemsList) itemsList.style.display = 'flex';
+    if (footer) footer.style.display = 'flex';
+
+    let totalPairs = 0;
+    let totalCost = 0;
+    let html = '';
+
+    for (const [productId, item] of state.reorder.orderSheet.entries()) {
+        let modelPairs = 0;
+        let modelCost = 0;
+
+        let sizeCellsHtml = '';
+        item.variants.forEach(v => {
+            const qty = v.orderQty || 0;
+            modelPairs += qty;
+            modelCost += (qty * (v.costPrice || 0));
+
+            sizeCellsHtml += `
+                <div class="sheet-size-cell">
+                    <span class="cell-sz">Sz ${v.size}</span>
+                    <span class="cell-stock-tag ${v.currentStock === 0 ? 'zero' : ''}">${v.currentStock} in st.</span>
+                    <div class="stepper-wrap">
+                        <button type="button" class="btn-step" onclick="window._reorderHub.stepQty('${productId}', '${v.variantId}', -1)">-</button>
+                        <input 
+                            type="number" 
+                            class="stepper-input" 
+                            min="0" 
+                            value="${qty}" 
+                            onchange="window._reorderHub.setQty('${productId}', '${v.variantId}', this.value)"
+                            onfocus="this.select()"
+                        >
+                        <button type="button" class="btn-step" onclick="window._reorderHub.stepQty('${productId}', '${v.variantId}', 1)">+</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        totalPairs += modelPairs;
+        totalCost += modelCost;
+
+        html += `
+            <div class="sheet-item-card" id="sheetItem_${productId}">
+                <div class="sheet-item-header">
+                    <div>
+                        <div class="sheet-item-name">
+                            <span class="brand-badge">${item.brand}</span> ${item.name}
+                        </div>
+                        <small style="color:var(--text-dim); font-size:0.75rem;">
+                            ${item.category} • Cost: Rs. ${item.costPrice.toLocaleString()} • Subtotal: <strong>${modelPairs} prs</strong> (Rs. ${modelCost.toLocaleString()})
+                        </small>
+                    </div>
+                    <div class="sheet-item-quick-tools">
+                        <button type="button" class="btn-sheet-tool" title="Set 3 pairs for 0-stock sizes" onclick="window._reorderHub.fillZeroStock('${productId}', 3)">⚡ 0-Stock (3)</button>
+                        <button type="button" class="btn-sheet-tool" title="Add 1 to all sizes" onclick="window._reorderHub.addOneAll('${productId}')">+1 All</button>
+                        <button type="button" class="btn-sheet-tool danger" title="Remove this model" onclick="window._reorderHub.removeCode('${productId}')">✕</button>
+                    </div>
+                </div>
+
+                <div class="sheet-size-grid">
+                    ${sizeCellsHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    itemsList.innerHTML = html;
+
+    if (subTitle) subTitle.textContent = `${count} Models • ${totalPairs} Total Pairs`;
+    if (summaryModels) summaryModels.textContent = count;
+    if (summaryPairs) summaryPairs.textContent = `${totalPairs} prs`;
+    if (summaryCost) summaryCost.textContent = `Rs. ${totalCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+}
+
+/**
+ * Generate formatted WhatsApp order text
+ */
+function buildWhatsAppMessage() {
+    if (state.reorder.orderSheet.size === 0) return null;
+
+    const locSelect = document.getElementById('reorderLocationSelect');
+    const branchName = locSelect ? locSelect.options[locSelect.selectedIndex].text.replace(/^[^\w\s]+/, '').trim() : 'Fashion Feet Store';
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const notes = (state.reorder.supplierNotes || '').trim();
+
+    let totalPairs = 0;
+    let totalCost = 0;
+    let lines = [];
+
+    let idx = 1;
+    for (const [productId, item] of state.reorder.orderSheet.entries()) {
+        const orderedSizes = item.variants.filter(v => (v.orderQty || 0) > 0);
+        if (orderedSizes.length === 0) continue;
+
+        let modelPairs = 0;
+        let sizeRows = [];
+        orderedSizes.forEach(v => {
+            modelPairs += v.orderQty;
+            totalCost += (v.orderQty * (v.costPrice || 0));
+            sizeRows.push(`   • Size ${v.size} : *${v.orderQty} pairs* (Stock: ${v.currentStock})`);
+        });
+
+        totalPairs += modelPairs;
+
+        lines.push(`👟 *${idx}. ${item.brand.toUpperCase()} — ${item.name}* (${item.category})\n${sizeRows.join('\n')}\n   _Model Subtotal: ${modelPairs} Pairs_`);
+        idx++;
+    }
+
+    if (lines.length === 0) return null;
+
+    let msg = `📦 *FASHION FEET — FOOTWEAR REORDER SHEET*\n`;
+    msg += `📅 Date: ${dateStr}\n`;
+    msg += `🏬 Branch: ${branchName}\n`;
+    if (notes) msg += `📝 Notes: ${notes}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    msg += lines.join('\n\n') + '\n\n';
+    msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `📊 *TOTAL REORDER: ${totalPairs} PAIRS*\n`;
+    if (totalCost > 0) {
+        msg += `💰 *ESTIMATED COST: LKR ${totalCost.toLocaleString(undefined, {minimumFractionDigits: 2})}*\n`;
+    }
+    msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `_Generated via Fashion Feet Inventory Hub_`;
+
+    return { text: msg, totalPairs: totalPairs };
+}
+
+function copyWhatsAppOrder() {
+    const data = buildWhatsAppMessage();
+    if (!data) {
+        showToast("Please enter order quantities (> 0) for at least one size.", "warning");
+        return;
+    }
+
+    navigator.clipboard.writeText(data.text).then(() => {
+        showToast(`WhatsApp Order copied to clipboard! (${data.totalPairs} Pairs)`, "success");
+    }).catch(err => {
+        console.error("Clipboard error:", err);
+        showToast("Failed to copy. Please select and copy manually.", "error");
+    });
+}
+
+function directWhatsAppOrder() {
+    const data = buildWhatsAppMessage();
+    if (!data) {
+        showToast("Please enter order quantities (> 0) for at least one size.", "warning");
+        return;
+    }
+
+    const url = `https://wa.me/?text=${encodeURIComponent(data.text)}`;
+    window.open(url, '_blank');
+}
+
+/**
+ * Print Purchase Order Sheet
+ */
+function printReorderPO() {
+    const data = buildWhatsAppMessage();
+    if (!data) {
+        showToast("Please enter order quantities (> 0) for at least one size.", "warning");
+        return;
+    }
+
+    const locSelect = document.getElementById('reorderLocationSelect');
+    const branchName = locSelect ? locSelect.options[locSelect.selectedIndex].text.replace(/^[^\w\s]+/, '').trim() : 'Fashion Feet Store';
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const notes = (state.reorder.supplierNotes || '').trim();
+
+    let rowsHtml = '';
+    let totalPairs = 0;
+    let totalCost = 0;
+
+    for (const [productId, item] of state.reorder.orderSheet.entries()) {
+        const orderedSizes = item.variants.filter(v => (v.orderQty || 0) > 0);
+        orderedSizes.forEach(v => {
+            const lineCost = v.orderQty * (v.costPrice || 0);
+            totalPairs += v.orderQty;
+            totalCost += lineCost;
+
+            rowsHtml += `
+                <tr>
+                    <td><strong>${item.brand}</strong> - ${item.name}</td>
+                    <td>${item.category}</td>
+                    <td style="text-align:center; font-weight:bold;">${v.size}</td>
+                    <td style="text-align:center;">${v.currentStock}</td>
+                    <td style="text-align:center; font-weight:bold; font-size:1.05rem;">${v.orderQty}</td>
+                    <td style="text-align:right;">Rs. ${(v.costPrice || 0).toLocaleString()}</td>
+                    <td style="text-align:right; font-weight:bold;">Rs. ${lineCost.toLocaleString()}</td>
+                </tr>
+            `;
+        });
+    }
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Fashion Feet — Purchase Reorder Voucher</title>
+            <style>
+                body { font-family: 'Inter', sans-serif; padding: 25px; color: #1e293b; line-height: 1.5; }
+                .po-header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+                .po-title { font-size: 22px; font-weight: 800; text-transform: uppercase; color: #0f172a; }
+                .meta-table { width: 100%; margin-bottom: 20px; font-size: 14px; }
+                .meta-table td { padding: 4px 0; }
+                table.items { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+                table.items th, table.items td { border: 1px solid #cbd5e1; padding: 8px 10px; }
+                table.items th { background: #f1f5f9; text-transform: uppercase; font-size: 11px; }
+                .total-box { margin-top: 25px; border-top: 2px solid #0f172a; padding-top: 12px; display: flex; justify-content: space-between; font-size: 16px; font-weight: bold; }
+                .sig-box { margin-top: 50px; display: flex; justify-content: space-between; font-size: 12px; }
+                .sig-line { width: 180px; border-top: 1px dashed #64748b; text-align: center; padding-top: 5px; }
+                @media print { .no-print { display: none; } }
+            </style>
+        </head>
+        <body>
+            <div class="po-header">
+                <div>
+                    <div class="po-title">👟 Fashion Feet — Purchase Reorder Sheet</div>
+                    <div>Footwear Supply & Reordering Note</div>
+                </div>
+                <div style="text-align: right; font-size: 13px;">
+                    <div>Date: <strong>${dateStr}</strong></div>
+                    <div>Location: <strong>${branchName}</strong></div>
+                </div>
+            </div>
+
+            ${notes ? `<div style="background:#f8fafc; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;"><strong>Supplier / Notes:</strong> ${notes}</div>` : ''}
+
+            <table class="items">
+                <thead>
+                    <tr>
+                        <th>Brand & Model Code</th>
+                        <th>Category</th>
+                        <th style="text-align:center;">Size</th>
+                        <th style="text-align:center;">Current Stock</th>
+                        <th style="text-align:center;">Reorder Qty</th>
+                        <th style="text-align:right;">Unit Cost</th>
+                        <th style="text-align:right;">Total Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+
+            <div class="total-box">
+                <div>Total Reorder Pairs: <span style="font-size:20px; color:#0284c7;">${totalPairs} Pairs</span></div>
+                <div>Estimated Total Cost: <span style="font-size:20px; color:#16a34a;">Rs. ${totalCost.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div>
+            </div>
+
+            <div class="sig-box">
+                <div class="sig-line">Prepared By (Staff)</div>
+                <div class="sig-line">Store Manager Approval</div>
+                <div class="sig-line">Supplier Confirmation</div>
+            </div>
+
+            <script>
+                window.onload = function() { window.print(); }
+            </script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
+/**
+ * Export Reorder Sheet to CSV / Excel
+ */
+function exportReorderCSV() {
+    if (state.reorder.orderSheet.size === 0) {
+        showToast("Reorder Sheet is empty.", "warning");
+        return;
+    }
+
+    let csv = "Brand,Model Code,Category,Size,Current Stock,Order Qty,Unit Cost,Line Total Cost\n";
+    let hasItems = false;
+
+    for (const [productId, item] of state.reorder.orderSheet.entries()) {
+        const orderedSizes = item.variants.filter(v => (v.orderQty || 0) > 0);
+        orderedSizes.forEach(v => {
+            hasItems = true;
+            const lineCost = v.orderQty * (v.costPrice || 0);
+            csv += `"${item.brand}","${item.name}","${item.category}","${v.size}",${v.currentStock},${v.orderQty},${v.costPrice || 0},${lineCost}\n`;
+        });
+    }
+
+    if (!hasItems) {
+        showToast("Please enter quantities (> 0) to export.", "warning");
+        return;
+    }
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `FashionFeet_Reorder_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Reorder Sheet exported to CSV!", "success");
+}
+
+// Global Reorder API for inline HTML handlers
+window._reorderHub = {
+    addCode: addCodeToReorder,
+    removeCode: removeCodeFromReorder,
+    toggleCode: toggleCodeInReorder,
+    stepQty: updateSizeOrderQty,
+    setQty: (pId, vId, val) => updateSizeOrderQty(pId, vId, 0, val),
+    fillZeroStock: fillZeroStockForModel,
+    addOneAll: addOneToAllSizes
+};
+
 
 // Start Engine on DOM Load
 document.addEventListener('DOMContentLoaded', initApp);
