@@ -146,8 +146,9 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.85rem 2.25rem;
-    background: rgba(11, 16, 29, 0.82);
+    padding: 0.65rem 1.5rem;
+    gap: 1rem;
+    background: rgba(11, 16, 29, 0.88);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--glass-border);
@@ -160,9 +161,9 @@ body.light-theme .navbar {
 .navbar-left {
     display: flex;
     align-items: center;
-    gap: 1.25rem;
+    gap: 1rem;
     min-width: 0;
-    flex: 1 1 auto;
+    flex-shrink: 0;
 }
 
 .logo-container {
@@ -236,7 +237,7 @@ body.light-theme .navbar {
 .hub-nav {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
     flex-shrink: 0;
     flex-wrap: nowrap;
 }
@@ -245,7 +246,7 @@ body.light-theme .navbar {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    padding: 0.45rem 0.85rem;
+    padding: 0.45rem 0.8rem;
     border-radius: 8px;
     color: var(--text-muted);
     font-size: 0.82rem;
@@ -289,33 +290,64 @@ body.light-theme .navbar {
     color: #ffffff;
 }
 
-@media (max-width: 1400px) {
+.nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-shrink: 0;
+}
+
+@media (max-width: 1550px) {
     .system-tag {
         display: none !important;
     }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
     .navbar {
-        padding: 0.65rem 1.25rem;
+        padding: 0.55rem 1rem;
+        gap: 0.75rem;
     }
     .navbar-left {
-        gap: 0.75rem;
+        gap: 0.65rem;
     }
     .brand-name {
         font-size: 1.15rem;
     }
     .nav-tab {
-        padding: 0.4rem 0.65rem;
+        padding: 0.38rem 0.6rem;
         font-size: 0.78rem;
-        gap: 0.35rem;
+        gap: 0.3rem;
+    }
+    .nav-controls {
+        gap: 0.45rem;
+    }
+    /* Compact right-side controls so they never overlap */
+    .status-indicator .status-label {
+        display: none !important;
+    }
+    .status-indicator {
+        padding: 0.35rem 0.55rem;
+    }
+    #autoScanToggleBtn .toggle-text {
+        font-size: 0.74rem;
+    }
+    #installPwaBtn .toggle-text {
+        display: none !important;
+    }
+    .user-profile-widget .profile-btn {
+        padding: 0.25rem 0.55rem;
+        gap: 0.4rem;
     }
 }
 
-.nav-controls {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+@media (max-width: 1100px) {
+    .status-indicator {
+        display: none !important;
+    }
+    #autoScanToggleBtn .toggle-text {
+        display: none !important;
+    }
 }
 
 .status-indicator {
