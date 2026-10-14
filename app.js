@@ -2381,6 +2381,10 @@ function initReorderHub() {
         document.getElementById('btnDirectWhatsApp')?.addEventListener('click', directWhatsAppOrder);
         document.getElementById('btnPrintPO')?.addEventListener('click', printReorderPO);
         document.getElementById('btnExportCSV')?.addEventListener('click', exportReorderCSV);
+        document.getElementById('btnExportCurrentStockCSV')?.addEventListener('click', exportCurrentStockCSV);
+        document.getElementById('btnPrintCurrentStockSheet')?.addEventListener('click', printCurrentStockSheet);
+        document.getElementById('btnCopyCurrentStockWhatsApp')?.addEventListener('click', copyCurrentStockWhatsApp);
+        document.getElementById('fillAllCurrentStockBtn')?.addEventListener('click', fillAllCurrentStockInSheet);
 
         const notesInput = document.getElementById('sheetSupplierNotes');
         if (notesInput) {
@@ -2420,16 +2424,9 @@ function getVariantStock(variantId, locId) {
 }
 
 /**
- * Render the filtered catalog cards
+ * Compute matching shoe models and stock counts based on active filters
  */
-function renderReorderCatalog() {
-    const listEl = document.getElementById('reorderCatalogList');
-    const totalStylesTag = document.getElementById('reorderTotalStylesCount');
-    const needsOrderTag = document.getElementById('reorderNeedsOrderCount');
-    const filterStatsTag = document.getElementById('reorderFilterStatsTag');
-
-    if (!listEl) return;
-
+function getMatchingReorderModels() {
     const brand = state.reorder.filterBrand;
     const cat = state.reorder.filterCategory;
     const status = state.reorder.filterStatus;
@@ -2498,6 +2495,22 @@ function renderReorderCatalog() {
         });
     }
 
+    return { matchingModels, needsOrderCount };
+}
+
+/**
+ * Render the filtered catalog cards
+ */
+function renderReorderCatalog() {
+    const listEl = document.getElementById('reorderCatalogList');
+    const totalStylesTag = document.getElementById('reorderTotalStylesCount');
+    const needsOrderTag = document.getElementById('reorderNeedsOrderCount');
+    const filterStatsTag = document.getElementById('reorderFilterStatsTag');
+
+    if (!listEl) return;
+
+    const { matchingModels, needsOrderCount } = getMatchingReorderModels();
+
     // Update Counts
     if (totalStylesTag) totalStylesTag.innerHTML = `Styles: <strong>${matchingModels.length}</strong>`;
     if (needsOrderTag) needsOrderTag.innerHTML = `Needs Reorder: <strong>${needsOrderCount}</strong>`;
@@ -2556,8 +2569,13 @@ function renderReorderCatalog() {
                 </div>
 
                 <div class="model-card-actions">
+                    ${m.totalStock > 0 ? `
+                    <button type="button" class="btn-card-transfer" onclick="event.stopPropagation(); window._reorderHub.sendToTransfer('${m.productId}')" title="Move available stock (${m.totalStock} prs) to Transfer Batch">
+                        <span>🚚</span> Transfer Stock (${m.totalStock} prs)
+                    </button>
+                    ` : ''}
                     <button type="button" class="btn-add-to-sheet" onclick="event.stopPropagation(); window._reorderHub.addCode('${m.productId}')">
-                        ${inSheet ? '✓ Selected in Order Sheet' : '➕ Add Code to Reorder'}
+                        ${inSheet ? '✓ Selected in Order Sheet' : '➕ Add to Reorder'}
                     </button>
                 </div>
             </div>
@@ -2712,6 +2730,101 @@ function addOneToAllSizes(productId) {
 }
 
 /**
+ * Quick Preset: Set order quantities to match currently available stock for this model
+ */
+function fillCurrentStockForModel(productId) {
+    const sheetItem = state.reorder.orderSheet.get(productId);
+    if (!sheetItem) return;
+
+    let totalCopied = 0;
+    sheetItem.variants.forEach(v => {
+        v.orderQty = Math.max(0, v.currentStock || 0);
+        totalCopied += v.orderQty;
+    });
+
+    renderReorderSheet();
+    showToast(`Copied current stock (${totalCopied} pairs) as order quantity!`, "success");
+}
+
+/**
+ * Quick Preset: Reset all order quantities for this model to 0
+ */
+function zeroAllForModel(productId) {
+    const sheetItem = state.reorder.orderSheet.get(productId);
+    if (!sheetItem) return;
+
+    sheetItem.variants.forEach(v => {
+        v.orderQty = 0;
+    });
+
+    renderReorderSheet();
+    showToast("Reset order quantities to 0", "info");
+}
+
+/**
+ * Quick Preset: Match Current Stock for all items in order sheet
+ */
+function fillAllCurrentStockInSheet() {
+    if (state.reorder.orderSheet.size === 0) return;
+    let total = 0;
+    for (const [productId, sheetItem] of state.reorder.orderSheet.entries()) {
+        sheetItem.variants.forEach(v => {
+            v.orderQty = Math.max(0, v.currentStock || 0);
+            total += v.orderQty;
+        });
+    }
+    renderReorderSheet();
+    showToast(`Matched current stock (${total} pairs) across all models in sheet!`, "success");
+}
+
+/**
+ * Transfer currently available stock of a shoe model to the Transfer Batch
+ */
+function sendModelToTransfer(productId) {
+    const variants = state.productsMap.get(productId);
+    if (!variants || variants.length === 0) return;
+
+    const locId = state.reorder.selectedLocationId !== 'ALL' 
+        ? state.reorder.selectedLocationId 
+        : (el.fromBranch ? el.fromBranch.value : state.locations[0]?.id);
+    
+    const locObj = state.locations.find(l => l.id === locId);
+    const branchName = locObj ? locObj.name : "Dispatch Branch";
+
+    if (el.fromBranch && locId !== 'ALL') {
+        el.fromBranch.value = locId;
+        updateRouteHeader();
+        updateBranchStockTotals();
+        renderCustomDropdownMenus();
+    }
+
+    let addedCount = 0;
+    let addedPairs = 0;
+
+    variants.forEach(v => {
+        const available = getStock(v.id, locId);
+        if (available > 0) {
+            addItemDirectlyToCart(v, available);
+            addedCount++;
+            addedPairs += available;
+        }
+    });
+
+    if (addedCount === 0) {
+        showToast(`No stock currently available for this model at ${branchName}!`, "warning");
+        SoundFx.playWarningBuzz();
+        return;
+    }
+
+    SoundFx.playSuccessChime();
+    showToast(`Added ${addedPairs} pairs (${addedCount} sizes) to Transfer Batch!`, "success");
+
+    if (typeof window.switchHubTab === 'function') {
+        window.switchHubTab('transfer');
+    }
+}
+
+/**
  * Render the Right Panel Reorder Sheet
  */
 function renderReorderSheet() {
@@ -2719,6 +2832,7 @@ function renderReorderSheet() {
     const itemsList = document.getElementById('sheetItemsList');
     const footer = document.getElementById('sheetFooter');
     const subTitle = document.getElementById('sheetSubTitle');
+    const fillAllBtn = document.getElementById('fillAllCurrentStockBtn');
 
     const summaryModels = document.getElementById('sheetSummaryModels');
     const summaryPairs = document.getElementById('sheetSummaryPairs');
@@ -2727,6 +2841,7 @@ function renderReorderSheet() {
     if (!itemsList) return;
 
     const count = state.reorder.orderSheet.size;
+    if (fillAllBtn) fillAllBtn.style.display = count > 0 ? 'inline-flex' : 'none';
 
     if (count === 0) {
         if (emptyState) emptyState.style.display = 'block';
@@ -2757,7 +2872,7 @@ function renderReorderSheet() {
             sizeCellsHtml += `
                 <div class="sheet-size-cell">
                     <span class="cell-sz">Sz ${v.size}</span>
-                    <span class="cell-stock-tag ${v.currentStock === 0 ? 'zero' : ''}">${v.currentStock} in st.</span>
+                    <span class="cell-stock-tag ${v.currentStock === 0 ? 'zero' : ''}" title="Click to use current stock (${v.currentStock}) as order qty" onclick="window._reorderHub.setQty('${productId}', '${v.variantId}', ${v.currentStock})">${v.currentStock} in st.</span>
                     <div class="stepper-wrap">
                         <button type="button" class="btn-step" onclick="window._reorderHub.stepQty('${productId}', '${v.variantId}', -1)">-</button>
                         <input 
@@ -2790,7 +2905,9 @@ function renderReorderSheet() {
                     </div>
                     <div class="sheet-item-quick-tools">
                         <button type="button" class="btn-sheet-tool" title="Set 3 pairs for 0-stock sizes" onclick="window._reorderHub.fillZeroStock('${productId}', 3)">⚡ 0-Stock (3)</button>
+                        <button type="button" class="btn-sheet-tool stock" title="Set order quantities to match current stock" onclick="window._reorderHub.fillCurrentStock('${productId}')">📦 Current Stock</button>
                         <button type="button" class="btn-sheet-tool" title="Add 1 to all sizes" onclick="window._reorderHub.addOneAll('${productId}')">+1 All</button>
+                        <button type="button" class="btn-sheet-tool zero" title="Reset all quantities to 0" onclick="window._reorderHub.zeroAll('${productId}')">0</button>
                         <button type="button" class="btn-sheet-tool danger" title="Remove this model" onclick="window._reorderHub.removeCode('${productId}')">✕</button>
                     </div>
                 </div>
@@ -3040,6 +3157,216 @@ function exportReorderCSV() {
     showToast("Reorder Sheet exported to CSV!", "success");
 }
 
+/**
+ * Export Current Live Stock of filtered shoe models to CSV / Excel
+ */
+function exportCurrentStockCSV() {
+    const locId = state.reorder.selectedLocationId;
+    const locObj = state.locations.find(l => l.id === locId);
+    const branchName = locId === 'ALL' ? 'All_Branches' : (locObj ? locObj.name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Branch');
+    
+    const { matchingModels } = getMatchingReorderModels();
+    if (!matchingModels || matchingModels.length === 0) {
+        showToast("No shoe models found with current filters.", "warning");
+        return;
+    }
+
+    let csv = "Branch,Brand,Article_Code,Category,Size,Current_Stock_Pairs,Barcode,Unit_Cost,Selling_Price,Retail_Stock_Value,Cost_Stock_Value\n";
+    let grandTotalPairs = 0;
+    let grandTotalRetail = 0;
+    let grandTotalCost = 0;
+
+    matchingModels.forEach(m => {
+        m.variants.forEach(v => {
+            const stock = v.stock || 0;
+            const retailVal = stock * (m.sellingPrice || 0);
+            const costVal = stock * (m.costPrice || 0);
+            grandTotalPairs += stock;
+            grandTotalRetail += retailVal;
+            grandTotalCost += costVal;
+
+            csv += `"${locId === 'ALL' ? 'All Branches' : (locObj?.name || 'Branch')}","${m.brand}","${m.name}","${m.category}","${v.size || '-'}","${stock}","${v.barcode || ''}",${m.costPrice || 0},${m.sellingPrice || 0},${retailVal},${costVal}\n`;
+        });
+    });
+
+    csv += `\n"TOTAL","","${matchingModels.length} Models","","","${grandTotalPairs} Pairs","","","",${grandTotalRetail},${grandTotalCost}\n`;
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `FashionFeet_Current_Stock_${branchName}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Current Stock CSV exported! (${grandTotalPairs} pairs)`, "success");
+}
+
+/**
+ * Print Live Stock Inventory Sheet
+ */
+function printCurrentStockSheet() {
+    const locId = state.reorder.selectedLocationId;
+    const locObj = state.locations.find(l => l.id === locId);
+    const branchName = locId === 'ALL' ? 'All Branches Combined' : (locObj ? locObj.name : 'Branch');
+    
+    const { matchingModels } = getMatchingReorderModels();
+    if (!matchingModels || matchingModels.length === 0) {
+        showToast("No shoe models found with current filters.", "warning");
+        return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=950,height=750');
+    if (!printWindow) {
+        alert("Please allow popups to print Current Stock Sheet.");
+        return;
+    }
+
+    const dateStr = new Date().toLocaleString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
+    });
+
+    let grandTotalPairs = 0;
+    let grandTotalRetail = 0;
+
+    let rowsHtml = '';
+    matchingModels.forEach(m => {
+        grandTotalPairs += m.totalStock;
+        grandTotalRetail += (m.totalStock * m.sellingPrice);
+
+        const sizeChips = m.variants.map(v => {
+            const isZero = v.stock === 0;
+            const isLow = v.stock <= 2 && v.stock > 0;
+            const color = isZero ? '#dc2626' : (isLow ? '#d97706' : '#16a34a');
+            return `<span style="display:inline-block; margin:2px 4px; padding:2px 6px; border:1px solid #cbd5e1; border-radius:4px; font-size:11px; background:${isZero ? '#fef2f2' : '#f8fafc'};">
+                <span style="color:#64748b;">${v.size}:</span> <strong style="color:${color}; font-size:12px;">${v.stock}</strong>
+            </span>`;
+        }).join('');
+
+        rowsHtml += `
+            <tr style="border-bottom:1px solid #e2e8f0;">
+                <td style="padding:8px 10px;">
+                    <div style="font-weight:700; color:#0f172a; font-size:13px;">${m.name}</div>
+                    <div style="font-size:11px; color:#64748b;">${m.brand} • ${m.category}</div>
+                </td>
+                <td style="padding:8px 10px;">${sizeChips}</td>
+                <td style="padding:8px 10px; text-align:center; font-weight:700; font-size:13px;">${m.totalStock} prs</td>
+                <td style="padding:8px 10px; text-align:right; font-size:12px;">Rs. ${m.sellingPrice.toLocaleString()}</td>
+                <td style="padding:8px 10px; text-align:right; font-weight:700; font-size:12px; color:#0284c7;">Rs. ${(m.totalStock * m.sellingPrice).toLocaleString()}</td>
+            </tr>
+        `;
+    });
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Fashion Feet — Live Stock Inventory Report</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #1e293b; }
+                .report-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+                .report-title { font-size: 20px; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; }
+                .report-sub { font-size: 13px; color: #64748b; margin-top: 3px; }
+                .meta-col { text-align: right; font-size: 12px; line-height: 1.5; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th { background: #f1f5f9; padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
+                .total-bar { display: flex; justify-content: space-between; background: #e0e7ff; padding: 12px 16px; border-radius: 6px; margin-top: 20px; font-weight: 700; font-size: 14px; }
+                .sig-row { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 10px; }
+                .sig-box { width: 30%; text-align: center; border-top: 1px dashed #94a3b8; font-size: 11px; color: #64748b; padding-top: 6px; }
+                @media print { body { margin: 10mm; } }
+            </style>
+        </head>
+        <body>
+            <div class="report-header">
+                <div>
+                    <div class="report-title">👟 FASHION FEET — LIVE STOCK INVENTORY REPORT</div>
+                    <div class="report-sub">Real-Time Multi-Branch Stock Matrix Sheet</div>
+                </div>
+                <div class="meta-col">
+                    <div><strong>Branch:</strong> ${branchName}</div>
+                    <div><strong>Date & Time:</strong> ${dateStr}</div>
+                    <div><strong>Filter:</strong> ${state.reorder.filterBrand !== 'ALL' ? state.reorder.filterBrand : 'All Brands'} • ${state.reorder.filterCategory !== 'ALL' ? state.reorder.filterCategory : 'All Categories'}</div>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:25%;">Shoe Model / Code</th>
+                        <th style="width:45%;">Size Stock Breakdown</th>
+                        <th style="width:10%; text-align:center;">Total Qty</th>
+                        <th style="width:10%; text-align:right;">Sell Price</th>
+                        <th style="width:10%; text-align:right;">Stock Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+
+            <div class="total-bar">
+                <div>Total Styles: <strong>${matchingModels.length} Models</strong></div>
+                <div>Total Pairs in Stock: <strong style="color:#4338ca; font-size:16px;">${grandTotalPairs} Pairs</strong></div>
+                <div>Total Retail Inventory Value: <strong style="color:#15803d; font-size:16px;">Rs. ${grandTotalRetail.toLocaleString()}</strong></div>
+            </div>
+
+            <div class="sig-row">
+                <div class="sig-box">Audited By (Stock Keeper)</div>
+                <div class="sig-box">Showroom Manager Approval</div>
+                <div class="sig-box">Head Office Inventory Sync</div>
+            </div>
+
+            <script>
+                window.onload = function() { window.print(); }
+            </script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
+/**
+ * Copy Current Stock Summary to WhatsApp
+ */
+function copyCurrentStockWhatsApp() {
+    const locId = state.reorder.selectedLocationId;
+    const locObj = state.locations.find(l => l.id === locId);
+    const branchName = locId === 'ALL' ? 'All Branches Combined' : (locObj ? locObj.name : 'Branch');
+    
+    const { matchingModels } = getMatchingReorderModels();
+    if (!matchingModels || matchingModels.length === 0) {
+        showToast("No shoe models found with current filters.", "warning");
+        return;
+    }
+
+    const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    let totalPairs = 0;
+
+    let text = `👟 *FASHION FEET — CURRENT STOCK LIST*\n`;
+    text += `🏬 *Branch:* ${branchName}\n`;
+    text += `📅 *Date:* ${dateStr}\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    matchingModels.forEach(m => {
+        totalPairs += m.totalStock;
+        const sizeParts = m.variants.map(v => `${v.size}:${v.stock}`).join(' | ');
+        text += `*${m.name}* (${m.brand})\n`;
+        text += `👉 ${sizeParts}\n`;
+        text += `📊 *Total: ${m.totalStock} prs* (Rs. ${m.sellingPrice.toLocaleString()})\n\n`;
+    });
+
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `📊 *GRAND TOTAL:* ${totalPairs} Pairs across ${matchingModels.length} styles.\n`;
+
+    navigator.clipboard.writeText(text).then(() => {
+        if (typeof SoundFx !== 'undefined' && SoundFx.playSuccessChime) SoundFx.playSuccessChime();
+        showToast(`Current Stock copied for WhatsApp! (${totalPairs} pairs)`, "success");
+    }).catch(() => {
+        prompt("Copy this stock summary:", text);
+    });
+}
+
 // Global Reorder API for inline HTML handlers
 window._reorderHub = {
     addCode: addCodeToReorder,
@@ -3048,7 +3375,14 @@ window._reorderHub = {
     stepQty: updateSizeOrderQty,
     setQty: (pId, vId, val) => updateSizeOrderQty(pId, vId, 0, val),
     fillZeroStock: fillZeroStockForModel,
-    addOneAll: addOneToAllSizes
+    fillCurrentStock: fillCurrentStockForModel,
+    zeroAll: zeroAllForModel,
+    fillAllCurrentStock: fillAllCurrentStockInSheet,
+    addOneAll: addOneToAllSizes,
+    sendToTransfer: sendModelToTransfer,
+    exportCurrentStockCSV: exportCurrentStockCSV,
+    printCurrentStockSheet: printCurrentStockSheet,
+    copyCurrentStockWhatsApp: copyCurrentStockWhatsApp
 };
 
 

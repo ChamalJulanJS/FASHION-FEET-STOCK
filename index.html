@@ -20,7 +20,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="index.css?v=2.2">
+    <link rel="stylesheet" href="index.css?v=2.3">
 
     <!-- HTML5 Camera Barcode Scanner for Mobile Devices -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -783,8 +783,21 @@
                     <!-- LEFT: Shoe Styles & Size Matrix Explorer -->
                     <div class="reorder-catalog-col">
                         <div class="catalog-col-header">
-                            <h3>👟 Shoe Models & Size Stock</h3>
-                            <span class="hint-text">👉 Click any code card to drop it directly into the Reorder Form</span>
+                            <div class="catalog-col-header-left">
+                                <h3>👟 Shoe Models & Size Stock</h3>
+                                <span class="hint-text">👉 Click code to Reorder, or Transfer available stock to another branch</span>
+                            </div>
+                            <div class="stock-export-btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-cyan" id="btnExportCurrentStockCSV" title="Export Live Stock Breakdown to CSV / Excel">
+                                    <span>📥</span> Stock CSV
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-purple" id="btnPrintCurrentStockSheet" title="Print Live Stock Inventory Sheet">
+                                    <span>🖨️</span> Print Stock
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-whatsapp" id="btnCopyCurrentStockWhatsApp" title="Copy Current Stock summary for WhatsApp">
+                                    <span>📲</span> WhatsApp
+                                </button>
+                            </div>
                         </div>
                         <div class="reorder-catalog-list" id="reorderCatalogList">
                             <!-- Rendered dynamically -->
@@ -802,9 +815,14 @@
                                         <span class="sheet-sub" id="sheetSubTitle">0 Models • 0 Total Pairs</span>
                                     </div>
                                 </div>
-                                <button type="button" class="btn btn-sm btn-danger-outline" id="clearReorderSheetBtn" title="Clear all items in order sheet">
-                                    🗑️ Clear Form
-                                </button>
+                                <div class="sheet-header-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-cyan" id="fillAllCurrentStockBtn" title="Set order quantities to match currently available stock for all models in sheet" style="display: none;">
+                                        📦 Match Stock
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-danger-outline" id="clearReorderSheetBtn" title="Clear all items in order sheet">
+                                        🗑️ Clear
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Empty State Placeholder -->
@@ -1295,6 +1313,6 @@
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="app.js?v=2.2"></script>
+    <script src="app.js?v=2.3"></script>
 </body>
 </html>
