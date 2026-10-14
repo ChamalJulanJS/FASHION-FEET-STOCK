@@ -2339,6 +2339,8 @@ if (!state.reorder) {
     };
 }
 
+let activeAddSizeProductId = null;
+
 function initReorderHub() {
     const locSelect = document.getElementById('reorderLocationSelect');
     const brandSelect = document.getElementById('reorderBrandSelect');
@@ -2500,6 +2502,31 @@ function initReorderHub() {
             copyCurrentStockWhatsApp(branch, brand, cat, status);
         });
 
+        // Add Size Modal events
+        document.getElementById('closeAddSizeModalBtn')?.addEventListener('click', closeAddSizeModal);
+        document.getElementById('cancelAddSizeBtn')?.addEventListener('click', closeAddSizeModal);
+        document.getElementById('reorderAddSizeModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'reorderAddSizeModal') closeAddSizeModal();
+        });
+
+        document.getElementById('confirmAddCustomSizeBtn')?.addEventListener('click', () => {
+            if (!activeAddSizeProductId) return;
+            const sizeVal = document.getElementById('customSizeInput')?.value;
+            const qtyVal = document.getElementById('customSizeQtyInput')?.value;
+            if (!sizeVal || !sizeVal.trim()) {
+                showToast("Please enter a shoe size (e.g. 6 or 40).", "warning");
+                return;
+            }
+            addCustomSize(activeAddSizeProductId, sizeVal, qtyVal);
+        });
+
+        document.getElementById('customSizeInput')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('confirmAddCustomSizeBtn')?.click();
+            }
+        });
+
         const notesInput = document.getElementById('sheetSupplierNotes');
         if (notesInput) {
             notesInput.addEventListener('input', () => {
@@ -2521,7 +2548,11 @@ function sortVariantsBySize(variants) {
         const szB = (b.size || '').trim();
         const numA = parseFloat(szA);
         const numB = parseFloat(szB);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        const isNumA = !isNaN(numA);
+        const isNumB = !isNaN(numB);
+        if (isNumA && isNumB) return numA - numB;
+        if (isNumA && !isNumB) return -1;
+        if (!isNumA && isNumB) return 1;
         return szA.localeCompare(szB);
     });
 }
@@ -2737,6 +2768,7 @@ function addCodeToReorder(productId) {
         name: pName,
         brand: pBrand,
         category: pCat,
+        gender: p.gender || '',
         sellingPrice: Number(variants[0].selling_price) || 0,
         costPrice: Number(variants[0].cost_price) || 0,
         variants: sortedVars.map(v => {
@@ -2995,7 +3027,8 @@ function renderReorderSheet() {
             modelCost += (qty * (v.costPrice || 0));
 
             sizeCellsHtml += `
-                <div class="sheet-size-cell">
+                <div class="sheet-size-cell ${v.isCustom ? 'is-custom-size' : ''}">
+                    ${v.isCustom ? `<button type="button" class="custom-sz-remove-btn" title="Remove custom size" onclick="event.stopPropagation(); window._reorderHub.removeCustomSize('${productId}', '${v.variantId}')">✕</button>` : ''}
                     <span class="cell-sz">Sz ${v.displaySize || v.size}</span>
                     <span class="cell-stock-tag ${v.currentStock === 0 ? 'zero' : ''}" title="Click to use current stock (${v.currentStock}) as order qty" onclick="window._reorderHub.setQty('${productId}', '${v.variantId}', ${v.currentStock})">${v.currentStock} in st.</span>
                     <div class="stepper-wrap">
@@ -3014,6 +3047,14 @@ function renderReorderSheet() {
             `;
         });
 
+        // Trigger cell to add missing or extra size
+        sizeCellsHtml += `
+            <div class="sheet-size-cell add-size-trigger-cell" title="Add another / missing size to this model" onclick="window._reorderHub.openAddSizeModal('${productId}')">
+                <span class="add-size-icon">➕</span>
+                <span class="add-size-label">Add Size</span>
+            </div>
+        `;
+
         totalPairs += modelPairs;
         totalCost += modelCost;
 
@@ -3029,6 +3070,7 @@ function renderReorderSheet() {
                         </small>
                     </div>
                     <div class="sheet-item-quick-tools">
+                        <button type="button" class="btn-sheet-tool add-size" title="Add missing or new size to this model" onclick="window._reorderHub.openAddSizeModal('${productId}')">➕ Add Size</button>
                         <button type="button" class="btn-sheet-tool" title="Set 3 pairs for 0-stock sizes" onclick="window._reorderHub.fillZeroStock('${productId}', 3)">⚡ 0-Stock (3)</button>
                         <button type="button" class="btn-sheet-tool stock" title="Set order quantities to match current stock" onclick="window._reorderHub.fillCurrentStock('${productId}')">📦 Current Stock</button>
                         <button type="button" class="btn-sheet-tool" title="Add 1 to all sizes" onclick="window._reorderHub.addOneAll('${productId}')">+1 All</button>
@@ -3280,6 +3322,173 @@ function exportReorderCSV() {
     link.click();
     document.body.removeChild(link);
     showToast("Reorder Sheet exported to CSV!", "success");
+}
+
+/**
+ * Helper to normalize size input (handles men shoe 40 = 6 mapping)
+ */
+function normalizeSizeInput(inputSize, item) {
+    let s = (inputSize || '').toString().trim();
+    if (!s) return '';
+    const num = parseFloat(s);
+    // Check if this model predominantly uses EU sizes (35 - 48)
+    const hasEuSizes = item.variants.some(v => {
+        const n = parseFloat(v.size);
+        return !isNaN(n) && n >= 35 && n <= 48;
+    });
+    if (hasEuSizes && isMenShoe(item) && !isNaN(num) && num >= 3 && num <= 14) {
+        // User typed a UK size (e.g. 6) for a shoe that uses EU sizing (40)
+        return (num + 34).toString();
+    }
+    return s;
+}
+
+/**
+ * Open the Add Size Modal for a specific shoe model
+ */
+function openAddSizeModal(productId) {
+    activeAddSizeProductId = productId;
+    const item = state.reorder.orderSheet.get(productId);
+    if (!item) {
+        showToast("Shoe model not found in Reorder Sheet.", "warning");
+        return;
+    }
+
+    const titleEl = document.getElementById('addSizeModalShoeTitle');
+    const subEl = document.getElementById('addSizeModalShoeSub');
+    if (titleEl) titleEl.textContent = `Add Size: ${item.brand} ${item.name}`;
+    if (subEl) subEl.textContent = `${item.category} • Current sizes: ${item.variants.map(v => v.displaySize || v.size).join(', ')}`;
+
+    // Generate Standard Quick Sizes
+    const listEl = document.getElementById('quickAddSizesList');
+    if (listEl) {
+        let standardSizes = [];
+        const isMen = isMenShoe(item);
+        const nameUpper = (item.name || '').toUpperCase();
+        const catUpper = (item.category || '').toUpperCase();
+        const isKids = nameUpper.includes('KID') || catUpper.includes('KID') || nameUpper.includes('BABY') || catUpper.includes('BABY');
+
+        if (isKids) {
+            standardSizes = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35];
+        } else if (isMen) {
+            standardSizes = [38, 39, 40, 41, 42, 43, 44, 45, 46];
+        } else {
+            // Ladies / Women standard
+            standardSizes = [35, 36, 37, 38, 39, 40, 41];
+        }
+
+        let pillsHtml = '';
+        standardSizes.forEach(sz => {
+            const disp = getShoeDisplaySize(sz.toString(), item);
+            const exists = item.variants.some(v => {
+                const s = (v.size || '').toString().trim();
+                return s === sz.toString() || (isMen && s === (sz - 34).toString());
+            });
+
+            pillsHtml += `
+                <button type="button" 
+                    class="quick-sz-btn ${exists ? 'already-added' : ''}" 
+                    onclick="window._reorderHub.addCustomSize('${productId}', '${sz}', ${exists ? 1 : 3})" 
+                    title="${exists ? 'Already in order list. Click to +1 pair' : 'Click to add Size ' + disp + ' (3 pairs)'}"
+                >
+                    <strong>Sz ${disp}</strong>
+                    <span>${exists ? '✓ In Order (+1)' : '➕ Add (3 prs)'}</span>
+                </button>
+            `;
+        });
+        listEl.innerHTML = pillsHtml;
+    }
+
+    const input = document.getElementById('customSizeInput');
+    const qtyInput = document.getElementById('customSizeQtyInput');
+    if (input) input.value = '';
+    if (qtyInput) qtyInput.value = '3';
+
+    const modal = document.getElementById('reorderAddSizeModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        setTimeout(() => { if (input) input.focus(); }, 150);
+    }
+}
+
+/**
+ * Close the Add Size Modal
+ */
+function closeAddSizeModal() {
+    const modal = document.getElementById('reorderAddSizeModal');
+    if (modal) modal.style.display = 'none';
+    activeAddSizeProductId = null;
+}
+
+/**
+ * Add a custom or missing size to the model in the reorder sheet
+ */
+function addCustomSize(productId, sizeInput, qtyInput = 3) {
+    const item = state.reorder.orderSheet.get(productId);
+    if (!item) return;
+
+    const cleanSize = normalizeSizeInput(sizeInput, item);
+    if (!cleanSize) {
+        showToast("Please enter a valid shoe size.", "warning");
+        return;
+    }
+
+    const qty = Math.max(1, parseInt(qtyInput) || 3);
+    const displaySize = getShoeDisplaySize(cleanSize, item);
+
+    // Check if this size already exists
+    const existing = item.variants.find(v => {
+        const vSize = (v.size || '').toString().trim().toUpperCase();
+        const vDisp = (v.displaySize || '').toString().trim().toUpperCase();
+        return vSize === cleanSize.toUpperCase() || vDisp === displaySize.toUpperCase();
+    });
+
+    if (existing) {
+        existing.orderQty = (existing.orderQty || 0) + qty;
+        renderReorderSheet();
+        closeAddSizeModal();
+        showToast(`Size ${existing.displaySize || existing.size} already exists! Increased order qty by +${qty} (Total: ${existing.orderQty}).`, "info");
+        return;
+    }
+
+    const customVariantId = `custom_${productId}_${cleanSize}_${Date.now()}`;
+    const newVariant = {
+        variantId: customVariantId,
+        sku: `${item.name}-${cleanSize}`,
+        size: cleanSize,
+        displaySize: displaySize,
+        colour: item.variants[0]?.colour || '-',
+        currentStock: 0,
+        costPrice: item.costPrice || 0,
+        orderQty: qty,
+        isCustom: true
+    };
+
+    item.variants.push(newVariant);
+    item.variants = sortVariantsBySize(item.variants);
+
+    renderReorderSheet();
+    closeAddSizeModal();
+
+    if (typeof SoundEffects !== 'undefined' && SoundEffects.playPop) {
+        SoundEffects.playPop();
+    }
+    showToast(`Added Size ${displaySize} (${qty} pairs) to ${item.name}!`, "success");
+}
+
+/**
+ * Remove a custom size from the reorder sheet
+ */
+function removeCustomSize(productId, variantId) {
+    const item = state.reorder.orderSheet.get(productId);
+    if (!item) return;
+
+    const idx = item.variants.findIndex(v => v.variantId === variantId);
+    if (idx !== -1) {
+        const removed = item.variants.splice(idx, 1)[0];
+        renderReorderSheet();
+        showToast(`Removed Size ${removed.displaySize || removed.size} from order.`, "info");
+    }
 }
 
 /**
@@ -3620,6 +3829,10 @@ window._reorderHub = {
     fillAllCurrentStock: fillAllCurrentStockInSheet,
     addOneAll: addOneToAllSizes,
     sendToTransfer: sendModelToTransfer,
+    openAddSizeModal: openAddSizeModal,
+    closeAddSizeModal: closeAddSizeModal,
+    addCustomSize: addCustomSize,
+    removeCustomSize: removeCustomSize,
     openPrintStockModal: openPrintStockModal,
     closePrintStockModal: closePrintStockModal,
     updatePrintModalPreview: updatePrintModalPreview,

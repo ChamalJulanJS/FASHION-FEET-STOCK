@@ -20,7 +20,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="index.css?v=3.4">
+    <link rel="stylesheet" href="index.css?v=3.5">
 
     <!-- HTML5 Camera Barcode Scanner for Mobile Devices -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -28,7 +28,7 @@
     <!-- Auto Cache Flush on Deployment -->
     <script>
         (function() {
-            const APP_BUILD_VER = '3.4';
+            const APP_BUILD_VER = '3.5';
             if (localStorage.getItem('ff_build_v') !== APP_BUILD_VER) {
                 localStorage.setItem('ff_build_v', APP_BUILD_VER);
                 if ('caches' in window) {
@@ -987,6 +987,51 @@
         </div>
     </div>
 
+    <!-- Add New Size Modal for Reorder Form -->
+    <div class="modal-overlay" id="reorderAddSizeModal" style="display: none;">
+        <div class="modal-card glass-panel add-size-modal-card">
+            <div class="modal-card-header">
+                <div class="header-icon-title">
+                    <span class="modal-title-icon">➕</span>
+                    <div>
+                        <h3 id="addSizeModalShoeTitle">Add New Size to Order</h3>
+                        <span class="modal-sub" id="addSizeModalShoeSub">Add missing or extra sizes to this reorder batch</span>
+                    </div>
+                </div>
+                <button type="button" class="close-card-btn" id="closeAddSizeModalBtn">&times;</button>
+            </div>
+
+            <div class="add-size-modal-body">
+                <!-- Quick Standard Sizes to pick -->
+                <div class="quick-sizes-section">
+                    <label class="control-label"><strong>⚡ Quick Add Standard Sizes (එක ක්ලික් එකෙන් එක්කරන්න):</strong></label>
+                    <div class="quick-sizes-pills" id="quickAddSizesList">
+                        <!-- Populated dynamically based on missing sizes -->
+                    </div>
+                </div>
+
+                <!-- Custom Size Input Row -->
+                <div class="custom-size-row">
+                    <div class="form-group-modal" style="flex: 2;">
+                        <label for="customSizeInput">Or Type Custom Size (වෙනත් Size එකක්):</label>
+                        <input type="text" id="customSizeInput" class="glass-input modal-input" placeholder="e.g. 5, 6, 10, 11, 46, XL">
+                    </div>
+                    <div class="form-group-modal" style="flex: 1;">
+                        <label for="customSizeQtyInput">Order Pairs (ජෝඩු):</label>
+                        <input type="number" id="customSizeQtyInput" class="glass-input modal-input" value="3" min="1" max="999">
+                    </div>
+                </div>
+
+                <div class="modal-action-row" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" id="cancelAddSizeBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmAddCustomSizeBtn">
+                        <span>➕</span> Add Size to Order Form
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Camera Barcode Scanner Modal (Android & iOS Phone Camera) -->
     <div class="modal-overlay" id="cameraScannerModal" style="display: none;">
         <div class="modal-card camera-scanner-card">
@@ -1417,6 +1462,6 @@
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="app.js?v=3.4"></script>
+    <script src="app.js?v=3.5"></script>
 </body>
 </html>
