@@ -4551,3 +4551,39 @@ body.light-theme .auth-input {
 .btn-sheet-tool.danger .ico { margin: 0; }
 .mob-float-btn .ico, .profile-btn .ico:last-child { margin: 0 0 0 6px; }
 .custom-dropdown-trigger .ico { width: 16px; height: 16px; margin-right: 8px; }
+
+/* ===== Two-colour theme: neutral slate + single blue accent ===== */
+:root {
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-glow: rgba(59, 130, 246, 0.10);
+  --info-color: #3b82f6;
+}
+/* Route card: all neutral */
+.from-badge, .to-badge { background: var(--bg-tertiary) !important; color: var(--text-muted) !important; border: 1px solid var(--glass-border) !important; }
+.from-badge .badge-dot, .to-badge .badge-dot { background: var(--text-dim) !important; box-shadow: none !important; }
+.route-summary-pill { background: var(--bg-tertiary) !important; border: 1px solid var(--glass-border) !important; }
+.route-summary-pill .from-text, .route-summary-pill .to-text { color: var(--text-main) !important; }
+.route-summary-pill .arrow-text { color: var(--text-dim) !important; }
+.helper-tag, .helper-tag.helper-from, .helper-tag.helper-to, .helper-from, .helper-to { color: var(--text-dim) !important; background: transparent !important; }
+.helper-status { color: var(--text-dim) !important; }
+.swap-btn { background: var(--bg-tertiary) !important; color: var(--text-muted) !important; border: 1px solid var(--glass-border) !important; box-shadow: none !important; }
+.swap-btn:hover { color: var(--accent-primary) !important; border-color: var(--accent-primary) !important; }
+.trigger-subtitle { color: var(--text-dim) !important; }
+.select-leading-icon, .select-leading-icon .loc-icon { color: var(--text-muted) !important; }
+/* Count badges */
+.cart-count-badge, .pairs-count-badge { background: var(--bg-tertiary) !important; color: var(--text-muted) !important; border: 1px solid var(--glass-border) !important; }
+/* Camera + header status */
+.btn-camera { background: var(--bg-tertiary) !important; color: var(--text-main) !important; border: 1px solid var(--glass-border) !important; }
+.btn-camera:hover { border-color: var(--accent-primary) !important; }
+.pwa-install-btn, #installPwaBtn { background: var(--bg-tertiary) !important; color: var(--text-muted) !important; border: 1px solid var(--glass-border) !important; }
+.mode-toggle-btn.active, #autoScanToggleBtn { background: var(--accent-glow) !important; color: var(--accent-primary) !important; border: 1px solid rgba(59,130,246,0.35) !important; }
+.mode-toggle-btn.active strong, #autoScanToggleBtn strong { color: var(--accent-primary) !important; }
+.user-role-badge { color: var(--text-dim) !important; }
+.status-indicator { background: var(--bg-tertiary) !important; border: 1px solid var(--glass-border) !important; }
+.pulse-dot.active { background: var(--text-muted) !important; box-shadow: none !important; }
+/* Neutral secondary buttons everywhere; accent only for primary */
+.btn-outline-cyan, .btn-outline-purple, .btn-outline-whatsapp, .btn-whatsapp, .btn-outline { background: var(--bg-tertiary) !important; color: var(--text-main) !important; border: 1px solid var(--glass-border) !important; }
+.btn-outline-cyan:hover, .btn-outline-purple:hover, .btn-outline-whatsapp:hover, .btn-whatsapp:hover, .btn-outline:hover { border-color: var(--accent-primary) !important; }
+.btn-success { background: var(--accent-primary) !important; color: #fff !important; border-color: var(--accent-primary) !important; box-shadow: none !important; }
+.btn-success:hover { background: var(--accent-primary-hover) !important; }
