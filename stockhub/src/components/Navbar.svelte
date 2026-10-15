@@ -76,12 +76,13 @@
       {/if}
 
       <button
-        class="btn btn-sm {app.autoScan ? 'border-accent/50 text-accent' : ''}"
+        class="btn btn-sm {app.autoScan ? 'border-accent/40 bg-accent-soft text-accent' : 'text-muted'}"
         onclick={() => (app.autoScan = !app.autoScan)}
         title="Toggle auto-add when scanning barcodes"
         aria-pressed={app.autoScan}
       >
-        <Zap class="h-3.5 w-3.5" /><span class="hidden sm:inline">Instant Scan: {app.autoScan ? 'ON' : 'OFF'}</span>
+        <Zap class="h-3.5 w-3.5" />
+        <span class="hidden xl:inline">Instant Scan: <strong>{app.autoScan ? 'ON' : 'OFF'}</strong></span>
       </button>
 
       <button class="btn btn-ghost btn-sm" onclick={() => app.syncCatalogAndStock()} title="Refresh catalog & stock" aria-label="Refresh catalog and stock">
@@ -109,7 +110,8 @@
           <ChevronDown class="h-3.5 w-3.5 text-dim" />
         </button>
         {#if menuOpen}
-          <div class="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface shadow-xl shadow-black/30" role="menu" onclick={(e) => e.stopPropagation()}>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div class="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface shadow-xl shadow-black/30" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
             <div class="border-b border-line px-4 py-3">
               <div class="text-sm font-semibold">{app.currentUser?.name ?? 'Not signed in'}</div>
               <div class="truncate text-xs text-dim">{app.currentUser?.email ?? 'Please log in to continue'}</div>

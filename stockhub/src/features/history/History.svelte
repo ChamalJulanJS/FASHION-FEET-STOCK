@@ -3,7 +3,7 @@
   import TransferLog from './TransferLog.svelte';
 </script>
 
-<section class="mx-auto w-full max-w-5xl space-y-4 p-4 pb-24 sm:p-6 lg:pb-6">
+<section class="space-y-4">
   <header class="flex items-center gap-3">
     <span class="grid size-9 place-items-center rounded-lg bg-accent-soft text-accent"><HistoryIcon class="size-5" /></span>
     <div>

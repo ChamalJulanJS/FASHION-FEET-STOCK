@@ -66,12 +66,12 @@ body {
   .card { @apply rounded-2xl border border-line bg-surface; }
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-raised px-3.5 py-2 text-sm font-medium text-fg
-      transition hover:border-accent/60 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer;
+      transition hover:border-accent/60 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer whitespace-nowrap shrink-0;
   }
   .btn-primary { @apply border-transparent bg-accent text-white hover:bg-accent-hover hover:border-transparent; }
   .btn-ghost { @apply border-transparent bg-transparent hover:bg-raised; }
   .btn-danger { @apply text-bad hover:border-bad/60; }
-  .btn-sm { @apply px-2.5 py-1.5 text-xs; }
+  .btn-sm { @apply h-8 px-2.5 py-1 text-xs; }
   .input {
     @apply w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm text-fg outline-none transition
       placeholder:text-dim focus:border-accent focus:ring-2 focus:ring-accent/20;

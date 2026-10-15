@@ -427,7 +427,7 @@
   </div>
 {/snippet}
 
-<div class="mx-auto w-full max-w-6xl space-y-5 p-4 pb-28 sm:p-6 lg:pb-8">
+<div class="space-y-5">
   <!-- STEP 1: ROUTE -->
   <section class="card p-4 sm:p-5" aria-labelledby="route-h">
     <div class="mb-4 flex items-center justify-between gap-3">
