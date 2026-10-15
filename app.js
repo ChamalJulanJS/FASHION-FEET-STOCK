@@ -403,7 +403,7 @@ function renderQuickStaffChips() {
         const displayName = s.name || s.email.split('@')[0];
         return `
             <button type="button" class="staff-chip-btn ${isSelected ? 'selected' : ''}" onclick="selectQuickStaff('${s.email}')" title="${s.email} (${roleLabel})">
-                <span class="chip-icon">👤</span>
+                <span class="chip-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
                 <span class="chip-name">${displayName}</span>
                 <span class="chip-badge">${roleLabel}</span>
             </button>
@@ -886,8 +886,8 @@ function updateRouteHeader() {
     const fromBranchTag = document.getElementById('fromBranchTag');
     const toBranchTag = document.getElementById('toBranchTag');
 
-    if (fromLocIcon) fromLocIcon.textContent = fromIsWh ? '🏭' : '🏬';
-    if (toLocIcon) toLocIcon.textContent = toIsWh ? '🏭' : '🏬';
+if (fromLocIcon) fromLocIcon.innerHTML = fromIsWh ? '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V9l9-6 9 6v12"/><path d="M8 21v-7h8v7"/></svg>' : '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/><path d="M5 12v8h14v-8"/></svg>';
+if (toLocIcon) toLocIcon.innerHTML = toIsWh ? '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V9l9-6 9 6v12"/><path d="M8 21v-7h8v7"/></svg>' : '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/><path d="M5 12v8h14v-8"/></svg>';
     if (fromBranchTitle) fromBranchTitle.textContent = fromLoc ? fromLoc.name : 'Select Branch';
     if (fromBranchSubtitle) fromBranchSubtitle.textContent = fromIsWh ? 'Central Distribution Hub' : 'Retail Showroom & Shop';
     if (toBranchTitle) toBranchTitle.textContent = toLoc ? toLoc.name : 'Select Destination';
@@ -1975,7 +1975,7 @@ function setupEventListeners() {
                 await state.html5QrScanner.applyVideoConstraints({
                     advanced: [{ torch: state.cameraTorchActive }]
                 });
-                el.switchCameraTorchBtn.textContent = state.cameraTorchActive ? "⚡ Torch ON" : "⚡ Torch";
+                el.switchCameraTorchBtn.innerHTML = state.cameraTorchActive ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Torch ON` : `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Torch`;
             } catch (e) {
                 showToast("Torch is not supported by your camera", "info");
             }
@@ -2055,12 +2055,12 @@ function setupEventListeners() {
         state.autoScanMode = !state.autoScanMode;
         if (state.autoScanMode) {
             el.autoScanToggleBtn.classList.add('active');
-            el.autoScanToggleBtn.innerHTML = `<span class="toggle-icon">⚡</span> <span class="toggle-text">Instant Scan: <strong>ON</strong></span>`;
+            el.autoScanToggleBtn.innerHTML = `<span class="toggle-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span> <span class="toggle-text">Instant Scan: <strong>ON</strong></span>`;
             el.scanModeLabel.innerHTML = `<span class="dot-indicator"></span><span>Instant Add Mode Active (Auto +1 on Scan)</span>`;
             showToast("Instant Barcode Scan Mode ON ⚡", "success");
         } else {
             el.autoScanToggleBtn.classList.remove('active');
-            el.autoScanToggleBtn.innerHTML = `<span class="toggle-icon">🔍</span> <span class="toggle-text">Instant Scan: <strong>OFF</strong></span>`;
+            el.autoScanToggleBtn.innerHTML = `<span class="toggle-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span> <span class="toggle-text">Instant Scan: <strong>OFF</strong></span>`;
             el.scanModeLabel.innerHTML = `<span class="dot-indicator" style="background: var(--text-dim);"></span><span>Inspection Mode (Show Size Matrix on Scan)</span>`;
             showToast("Inspection Mode Active (Scan opens preview) 🔍", "info");
         }
@@ -2352,10 +2352,10 @@ function initReorderHub() {
     if (!locSelect || !brandSelect || !catSelect) return;
 
     // 1. Populate Locations Dropdown
-    locSelect.innerHTML = `<option value="ALL">🌐 All Branches Combined (සියලු ශාඛා)</option>`;
+    locSelect.innerHTML = `<option value="ALL">All Branches Combined (සියලු ශාඛා)</option>`;
     state.locations.forEach(loc => {
         const isDefault = loc.id === state.reorder.selectedLocationId;
-        locSelect.innerHTML += `<option value="${loc.id}" ${isDefault ? 'selected' : ''}>🏬 ${loc.name}</option>`;
+        locSelect.innerHTML += `<option value="${loc.id}" ${isDefault ? 'selected' : ''}>${loc.name}</option>`;
     });
 
     // 2. Populate Brands Dropdown from Catalog
@@ -2726,7 +2726,7 @@ function renderReorderCatalog() {
                 <div class="model-card-actions">
                     ${m.totalStock > 0 ? `
                     <button type="button" class="btn-card-transfer" onclick="event.stopPropagation(); window._reorderHub.sendToTransfer('${m.productId}')" title="Move available stock (${m.totalStock} prs) to Transfer Batch">
-                        <span>🚚</span> Transfer Stock (${m.totalStock} prs)
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg> Transfer Stock (${m.totalStock} prs)
                     </button>
                     ` : ''}
                     <button type="button" class="btn-add-to-sheet" onclick="event.stopPropagation(); window._reorderHub.addCode('${m.productId}')">
@@ -3028,7 +3028,7 @@ function renderReorderSheet() {
 
             sizeCellsHtml += `
                 <div class="sheet-size-cell ${v.isCustom ? 'is-custom-size' : ''}">
-                    ${v.isCustom ? `<button type="button" class="custom-sz-remove-btn" title="Remove custom size" onclick="event.stopPropagation(); window._reorderHub.removeCustomSize('${productId}', '${v.variantId}')">✕</button>` : ''}
+                    ${v.isCustom ? `<button type="button" class="custom-sz-remove-btn" title="Remove custom size" onclick="event.stopPropagation(); window._reorderHub.removeCustomSize('${productId}', '${v.variantId}')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>` : ''}
                     <span class="cell-sz">Sz ${v.displaySize || v.size}</span>
                     <span class="cell-stock-tag ${v.currentStock === 0 ? 'zero' : ''}" title="Click to use current stock (${v.currentStock}) as order qty" onclick="window._reorderHub.setQty('${productId}', '${v.variantId}', ${v.currentStock})">${v.currentStock} in st.</span>
                     <div class="stepper-wrap">
@@ -3050,7 +3050,7 @@ function renderReorderSheet() {
         // Trigger cell to add missing or extra size
         sizeCellsHtml += `
             <div class="sheet-size-cell add-size-trigger-cell" title="Add another / missing size to this model" onclick="window._reorderHub.openAddSizeModal('${productId}')">
-                <span class="add-size-icon">➕</span>
+                <span class="add-size-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
                 <span class="add-size-label">Add Size</span>
             </div>
         `;
@@ -3070,12 +3070,12 @@ function renderReorderSheet() {
                         </small>
                     </div>
                     <div class="sheet-item-quick-tools">
-                        <button type="button" class="btn-sheet-tool add-size" title="Add missing or new size to this model" onclick="window._reorderHub.openAddSizeModal('${productId}')">➕ Add Size</button>
-                        <button type="button" class="btn-sheet-tool" title="Set 3 pairs for 0-stock sizes" onclick="window._reorderHub.fillZeroStock('${productId}', 3)">⚡ 0-Stock (3)</button>
-                        <button type="button" class="btn-sheet-tool stock" title="Set order quantities to match current stock" onclick="window._reorderHub.fillCurrentStock('${productId}')">📦 Current Stock</button>
+                        <button type="button" class="btn-sheet-tool add-size" title="Add missing or new size to this model" onclick="window._reorderHub.openAddSizeModal('${productId}')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add Size</button>
+                        <button type="button" class="btn-sheet-tool" title="Set 3 pairs for 0-stock sizes" onclick="window._reorderHub.fillZeroStock('${productId}', 3)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> 0-Stock (3)</button>
+                        <button type="button" class="btn-sheet-tool stock" title="Set order quantities to match current stock" onclick="window._reorderHub.fillCurrentStock('${productId}')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7.5L12 12l8.7-4.5M12 22V12"/></svg> Current Stock</button>
                         <button type="button" class="btn-sheet-tool" title="Add 1 to all sizes" onclick="window._reorderHub.addOneAll('${productId}')">+1 All</button>
                         <button type="button" class="btn-sheet-tool zero" title="Reset all quantities to 0" onclick="window._reorderHub.zeroAll('${productId}')">0</button>
-                        <button type="button" class="btn-sheet-tool danger" title="Remove this model" onclick="window._reorderHub.removeCode('${productId}')">✕</button>
+                        <button type="button" class="btn-sheet-tool danger" title="Remove this model" onclick="window._reorderHub.removeCode('${productId}')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                     </div>
                 </div>
 
@@ -3392,7 +3392,7 @@ function openAddSizeModal(productId) {
                     title="${exists ? 'Already in order list. Click to +1 pair' : 'Click to add Size ' + disp + ' (3 pairs)'}"
                 >
                     <strong>Sz ${disp}</strong>
-                    <span>${exists ? '✓ In Order (+1)' : '➕ Add (3 prs)'}</span>
+                    <span>${exists ? '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> In Order (+1)' : '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add (3 prs)'}</span>
                 </button>
             `;
         });
@@ -3504,10 +3504,10 @@ function openPrintStockModal() {
     const modalStatusSelect = document.getElementById('modalStockStatusSelect');
 
     if (modalBranchSelect) {
-        modalBranchSelect.innerHTML = `<option value="ALL">🌐 All Branches Combined (සියලු ශාඛා)</option>`;
+        modalBranchSelect.innerHTML = `<option value="ALL">All Branches Combined (සියලු ශාඛා)</option>`;
         state.locations.forEach(loc => {
             const isSelected = loc.id === state.reorder.selectedLocationId;
-            modalBranchSelect.innerHTML += `<option value="${loc.id}" ${isSelected ? 'selected' : ''}>🏬 ${loc.name}</option>`;
+            modalBranchSelect.innerHTML += `<option value="${loc.id}" ${isSelected ? 'selected' : ''}>${loc.name}</option>`;
         });
         if (state.reorder.selectedLocationId === 'ALL') {
             modalBranchSelect.value = 'ALL';
@@ -3726,7 +3726,7 @@ function printCurrentStockSheet(targetLocId, targetBrand, targetCat, targetStatu
                     <div class="report-sub">Real-Time Branch Stock Matrix & Valuation Sheet</div>
                 </div>
                 <div class="meta-col">
-                    <div><strong>Branch:</strong> <span class="branch-pill">🏬 ${branchName}</span></div>
+                    <div><strong>Branch:</strong> <span class="branch-pill">${branchName}</span></div>
                     <div><strong>Date & Time:</strong> ${dateStr}</div>
                     <div><strong>Filter:</strong> ${brand !== 'ALL' ? brand : 'All Brands'} • ${cat !== 'ALL' ? cat : 'All Categories'} • ${status !== 'ALL' ? status : 'All Levels'}</div>
                 </div>

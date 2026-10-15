@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -20,7 +20,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="index.css?v=3.6">
+    <link rel="stylesheet" href="index.css?v=3.7">
 
     <!-- HTML5 Camera Barcode Scanner for Mobile Devices -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -28,7 +28,7 @@
     <!-- Auto Cache Flush on Deployment -->
     <script>
         (function() {
-            const APP_BUILD_VER = '3.6';
+            const APP_BUILD_VER = '3.7';
             if (localStorage.getItem('ff_build_v') !== APP_BUILD_VER) {
                 localStorage.setItem('ff_build_v', APP_BUILD_VER);
                 if ('caches' in window) {
@@ -145,7 +145,7 @@
                 </button>
                 <button type="button" class="nav-tab" id="navTabReorder" onclick="window.switchHubTab('reorder')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    <span>📦 Stock & Reorder Hub</span>
+                    <span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7.5L12 12l8.7-4.5M12 22V12"/></svg> Stock & Reorder Hub</span>
                 </button>
                 <button type="button" class="nav-tab" id="navTabHistory" onclick="window.switchHubTab('history')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -162,12 +162,12 @@
             <!-- Logged-in Staff Profile Pill & Account Menu -->
             <div class="user-profile-widget" id="userProfileWidget">
                 <button class="profile-btn" id="userMenuBtn">
-                    <span class="avatar-icon">👤</span>
+                    <span class="avatar-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
                     <div class="user-meta-col">
                         <span class="user-display-name" id="userDisplayName">Staff Login</span>
                         <span class="user-role-badge" id="userRoleBadge">Click to Sign In</span>
                     </div>
-                    <span class="dropdown-caret">▼</span>
+                    <span class="dropdown-caret"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
                 </button>
 
                 <!-- Profile Dropdown Menu -->
@@ -179,18 +179,18 @@
                     <ul class="dropdown-menu-list">
                         <li id="menuItemManageStaff">
                             <button type="button" id="openStaffManagerBtn">
-                                <span>👥</span> Manage 8 Staff Accounts
+                                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c2.5.6 4 2.3 4 5.2"/></svg> Manage 8 Staff Accounts
                             </button>
                         </li>
                         <li>
                             <button type="button" id="openResetPasswordBtn">
-                                <span>🔑</span> Reset Password
+                                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/></svg> Reset Password
                             </button>
                         </li>
                         <li class="divider"></li>
                         <li>
                             <button type="button" id="logoutBtn" class="logout-btn">
-                                <span>🚪</span> Log Out
+                                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg> Log Out
                             </button>
                         </li>
                     </ul>
@@ -199,7 +199,7 @@
 
             <!-- Install Mobile App Button (PWA) -->
             <button class="mode-toggle-btn pwa-install-btn" id="installPwaBtn" title="Install on Android or iOS Device">
-                <span class="toggle-icon">📱</span>
+                <span class="toggle-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg></span>
                 <span class="toggle-text">Install App</span>
             </button>
 
@@ -211,7 +211,7 @@
 
             <!-- Auto Scan Mode Toggle Button -->
             <button class="mode-toggle-btn active" id="autoScanToggleBtn" title="Toggle Auto-Add when scanning barcodes">
-                <span class="toggle-icon">⚡</span>
+                <span class="toggle-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
                 <span class="toggle-text">Instant Scan: <strong>ON</strong></span>
             </button>
 
@@ -268,16 +268,16 @@
             </div>
             <div class="drawer-grid">
                 <button type="button" class="drawer-btn" id="mobAutoScanBtn">
-                    <span>⚡</span> Instant Scan: <strong id="mobAutoScanStatus">ON</strong>
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Instant Scan: <strong id="mobAutoScanStatus">ON</strong>
                 </button>
                 <button type="button" class="drawer-btn" id="mobSyncBtn">
-                    <span>🔄</span> Sync Catalog
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 01-15.5 6.2L3 16"/><path d="M3 21v-5h5"/><path d="M3 12A9 9 0 0118.5 5.8L21 8"/><path d="M21 3v5h-5"/></svg> Sync Catalog
                 </button>
                 <button type="button" class="drawer-btn" id="mobThemeBtn">
-                    <span>🌓</span> Toggle Theme
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18z" fill="currentColor"/></svg> Toggle Theme
                 </button>
                 <button type="button" class="drawer-btn" id="mobAudioBtn">
-                    <span>🔊</span> Sound Effects
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M19 5a10 10 0 010 14"/></svg> Sound Effects
                 </button>
             </div>
         </div>
@@ -321,7 +321,7 @@
                         <button type="button" class="custom-dropdown-trigger" id="fromDropdownBtn" aria-haspopup="listbox" aria-expanded="false">
                             <div class="trigger-left">
                                 <div class="select-leading-icon">
-                                    <span class="loc-icon" id="fromLocIcon">🏬</span>
+                                    <span class="loc-icon" id="fromLocIcon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/><path d="M5 12v8h14v-8"/></svg></span>
                                 </div>
                                 <div class="trigger-meta">
                                     <span class="trigger-title" id="fromBranchTitle">Shoe Gallery</span>
@@ -386,7 +386,7 @@
                         <button type="button" class="custom-dropdown-trigger" id="toDropdownBtn" aria-haspopup="listbox" aria-expanded="false">
                             <div class="trigger-left">
                                 <div class="select-leading-icon">
-                                    <span class="loc-icon" id="toLocIcon">🏭</span>
+                                    <span class="loc-icon" id="toLocIcon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V9l9-6 9 6v12"/><path d="M8 21v-7h8v7"/></svg></span>
                                 </div>
                                 <div class="trigger-meta">
                                     <span class="trigger-title" id="toBranchTitle">Head Office</span>
@@ -671,7 +671,7 @@
                                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                                 <polyline points="22 4 12 14.01 9 11.01"/>
                             </svg>
-                            🚀 Confirm & Dispatch Transfer
+                            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg> Confirm & Dispatch Transfer
                         </button>
                     </div>
                 </div>
@@ -788,7 +788,7 @@
                                 placeholder="Search by Shoe Code, Article #, or Name (e.g. SFW006, AS8006, 032-16, RD015)..." 
                                 autocomplete="off"
                             >
-                            <button type="button" class="btn-clear-search" id="reorderClearSearchBtn" style="display: none;">✕</button>
+                            <button type="button" class="btn-clear-search" id="reorderClearSearchBtn" style="display: none;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                         </div>
                         <div class="reorder-search-stats" id="reorderFilterStatsTag">
                             Showing 0 styles
@@ -807,13 +807,13 @@
                             </div>
                             <div class="stock-export-btn-group">
                                 <button type="button" class="btn btn-sm btn-outline-cyan" id="btnExportCurrentStockCSV" title="Export Live Stock Breakdown to CSV / Excel">
-                                    <span>📥</span> Stock CSV
+                                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg> Stock CSV
                                 </button>
                                 <button type="button" class="btn btn-sm btn-outline-purple" id="btnPrintCurrentStockSheet" title="Print Live Stock Inventory Sheet">
-                                    <span>🖨️</span> <span id="printStockBtnLabel">Print Stock</span>
+                                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg> <span id="printStockBtnLabel">Print Stock</span>
                                 </button>
                                 <button type="button" class="btn btn-sm btn-outline-whatsapp" id="btnCopyCurrentStockWhatsApp" title="Copy Current Stock summary for WhatsApp">
-                                    <span>📲</span> WhatsApp
+                                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> WhatsApp
                                 </button>
                             </div>
                         </div>
@@ -835,10 +835,10 @@
                                 </div>
                                 <div class="sheet-header-actions">
                                     <button type="button" class="btn btn-sm btn-outline-cyan" id="fillAllCurrentStockBtn" title="Set order quantities to match currently available stock for all models in sheet" style="display: none;">
-                                        📦 Match Stock
+                                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7.5L12 12l8.7-4.5M12 22V12"/></svg> Match Stock
                                     </button>
                                     <button type="button" class="btn btn-sm btn-danger-outline" id="clearReorderSheetBtn" title="Clear all items in order sheet">
-                                        🗑️ Clear
+                                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg> Clear
                                     </button>
                                 </div>
                             </div>
@@ -881,16 +881,16 @@
                                 <!-- Action Buttons -->
                                 <div class="sheet-actions-grid">
                                     <button type="button" class="btn btn-whatsapp" id="btnCopyWhatsApp">
-                                        <span>📲</span> Copy WhatsApp Order
+                                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy WhatsApp Order
                                     </button>
                                     <button type="button" class="btn btn-success" id="btnDirectWhatsApp">
-                                        <span>💬</span> Open WhatsApp
+                                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 01-12.6 7.4L3 20.5l1.6-5A8.5 8.5 0 1121 11.5z"/></svg> Open WhatsApp
                                     </button>
                                     <button type="button" class="btn btn-secondary" id="btnPrintPO">
-                                        <span>🖨️</span> Print Order Slip
+                                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg> Print Order Slip
                                     </button>
                                     <button type="button" class="btn btn-outline" id="btnExportCSV">
-                                        <span>📥</span> CSV / Excel
+                                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg> CSV / Excel
                                     </button>
                                 </div>
                             </div>
@@ -974,13 +974,13 @@
                 <!-- Actions -->
                 <div class="modal-stock-actions-grid">
                     <button type="button" class="btn btn-primary btn-modal-action" id="modalDoPrintSheetBtn">
-                        <span>🖨️</span> Print Inventory Sheet
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg> Print Inventory Sheet
                     </button>
                     <button type="button" class="btn btn-outline-cyan btn-modal-action" id="modalDoExportCsvBtn">
-                        <span>📥</span> Export to Excel / CSV
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg> Export to Excel / CSV
                     </button>
                     <button type="button" class="btn btn-outline-whatsapp btn-modal-action" id="modalDoCopyWhatsAppBtn">
-                        <span>📲</span> Copy for WhatsApp
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy for WhatsApp
                     </button>
                 </div>
             </div>
@@ -1025,7 +1025,7 @@
                 <div class="modal-action-row" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
                     <button type="button" class="btn btn-secondary" id="cancelAddSizeBtn">Cancel</button>
                     <button type="button" class="btn btn-primary" id="confirmAddCustomSizeBtn">
-                        <span>➕</span> Add Size to Order Form
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add Size to Order Form
                     </button>
                 </div>
             </div>
@@ -1054,7 +1054,7 @@
             </div>
             <div class="camera-controls-bar">
                 <span class="camera-instruction">Point camera at shoe box barcode</span>
-                <button type="button" class="btn btn-sm btn-secondary" id="switchCameraTorchBtn">⚡ Torch</button>
+                <button type="button" class="btn btn-sm btn-secondary" id="switchCameraTorchBtn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Torch</button>
             </div>
         </div>
     </div>
@@ -1282,7 +1282,7 @@
 
             <div class="staff-actions-bar">
                 <button type="button" class="btn btn-sm btn-primary" id="addNewStaffShortcutBtn">
-                    ➕ Add New Staff Account
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add New Staff Account
                 </button>
             </div>
 
@@ -1428,18 +1428,18 @@
             <span class="mob-float-title">Batch Cart</span>
         </div>
         <button type="button" class="btn btn-sm btn-success mob-float-btn" id="mobFloatViewBtn">
-            View Batch & Dispatch ➔
+            View Batch & Dispatch <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
     </div>
 
     <!-- Mobile Native Bottom Navigation Bar (iOS & Android App Bar) -->
     <nav class="mobile-bottom-nav no-print" id="mobileBottomNav">
         <button type="button" class="mobile-nav-item active" id="mobNavTransferBtn" onclick="window.switchHubTab('transfer')">
-            <span class="mob-nav-icon">📦</span>
+            <span class="mob-nav-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7.5L12 12l8.7-4.5M12 22V12"/></svg></span>
             <span class="mob-nav-label">Transfer</span>
         </button>
         <button type="button" class="mobile-nav-item" id="mobNavReorderBtn" onclick="window.switchHubTab('reorder')">
-            <span class="mob-nav-icon">📊</span>
+            <span class="mob-nav-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/></svg></span>
             <span class="mob-nav-label">Reorder</span>
         </button>
         <a href="#cartSection" class="mobile-nav-item" id="mobNavCartBtn">
@@ -1450,11 +1450,11 @@
             <span class="mob-nav-label">Batch Cart</span>
         </a>
         <button type="button" class="mobile-nav-item" id="mobNavHistoryBtn" onclick="window.switchHubTab('history')">
-            <span class="mob-nav-icon">📜</span>
+            <span class="mob-nav-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
             <span class="mob-nav-label">History</span>
         </button>
         <button type="button" class="mobile-nav-item" id="mobNavStaffBtn">
-            <span class="mob-nav-icon">👥</span>
+            <span class="mob-nav-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c2.5.6 4 2.3 4 5.2"/></svg></span>
             <span class="mob-nav-label">Staff</span>
         </button>
     </nav>

@@ -4542,3 +4542,12 @@ body.light-theme .auth-input {
 }
 
 
+
+/* ===== Minimalist line icons ===== */
+.ico { width: 15px; height: 15px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+.btn .ico, .btn-sheet-tool .ico, .drawer-btn .ico, .nav-tab .ico { margin-right: 6px; }
+.mob-nav-icon .ico { width: 20px; height: 20px; margin: 0; vertical-align: middle; }
+.icon-btn .ico, .close-card-btn .ico, .clear-input-btn .ico, .btn-clear-search .ico, .custom-sz-remove-btn .ico { margin: 0; width: 14px; height: 14px; }
+.btn-sheet-tool.danger .ico { margin: 0; }
+.mob-float-btn .ico, .profile-btn .ico:last-child { margin: 0 0 0 6px; }
+.custom-dropdown-trigger .ico { width: 16px; height: 16px; margin-right: 8px; }
