@@ -3586,7 +3586,7 @@ function updatePrintModalPreview() {
     if (nameEl) nameEl.textContent = branchName;
     if (modelsEl) modelsEl.textContent = `${matchingModels.length} Styles`;
     if (pairsEl) pairsEl.textContent = `${totalPairs} Pairs`;
-    if (retailEl) retailEl.textContent = `Rs. ${totalRetail.toLocaleString()}`;
+    if (retailEl) retailEl.textContent = 'Rs. ' + totalRetail.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**
