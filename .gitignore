@@ -57,3 +57,6 @@ capacitor.config.json
 .next/
 out/
 .vercel/
+stockhub/dist/
+stockhub/node_modules/
+!stockhub/package*.json
