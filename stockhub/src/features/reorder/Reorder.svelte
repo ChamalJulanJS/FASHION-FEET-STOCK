@@ -2,18 +2,43 @@
   import { onMount } from 'svelte';
   import {
     PackageSearch, Search, X, Plus, Minus, ArrowLeftRight, Check, Share2,
-    FileDown, Printer, Copy, RotateCcw, Sparkles, Trash2, MapPin
+    FileDown, Printer, Copy, RotateCcw, Sparkles, Trash2, MapPin, Camera, Store
   } from 'lucide-svelte';
   import { app, fmtMoney } from '../../lib/app.svelte';
   import { reorder } from './store.svelte';
   import { countOptions, getMatchingModels } from './logic';
+  import { extractBaseSkuAndSize } from '../stockcount/logic';
+  import CameraScanner from '../transfer/CameraScanner.svelte';
   import AddSizeModal from './AddSizeModal.svelte';
   import PrintStockModal from './PrintStockModal.svelte';
 
   let activeAddSizeProductId = $state<string | null>(null);
   let printModalOpen = $state(false);
+  let cameraOpen = $state(false);
   let mobilePane = $state<'catalog' | 'sheet'>('catalog');
   let sheetSection: HTMLElement | undefined = $state();
+
+  function handleBarcodeScan(raw: string) {
+    if (!raw) return;
+    cameraOpen = false;
+    const trimmed = raw.trim();
+    // 1. Check exact variant barcode / SKU
+    const exact = app.catalog.find(
+      (v) =>
+        (v.barcode && v.barcode.toUpperCase() === trimmed.toUpperCase()) ||
+        (v.sku && v.sku.toUpperCase() === trimmed.toUpperCase())
+    );
+    if (exact) {
+      const p = exact.products;
+      reorder.query = p?.name || exact.sku;
+      app.toast(`Scanned: ${p?.name || exact.sku} (Size ${exact.size || ''})`, 'success');
+      return;
+    }
+    // 2. Extract base SKU if last 2 digits are size
+    const { baseSku } = extractBaseSkuAndSize(trimmed);
+    reorder.query = baseSku || trimmed;
+    app.toast(`Searching for: ${reorder.query}`, 'info');
+  }
 
   onMount(() => {
     reorder.resolveLocation();
@@ -176,20 +201,31 @@
       <Search class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
       <input
         type="text"
-        class="input h-9 pl-9 pr-9 text-xs"
-        placeholder="Search by Shoe Code, Article #, Brand, or Size (e.g. SFW006, AS8006, 032-16, RD015)..."
+        class="input h-9 pl-9 pr-24 text-xs"
+        placeholder="Search by Shoe Code, Article #, Barcode, Brand, or Size (e.g. SFW006, RD015, Sz 41)..."
         bind:value={reorder.query}
       />
-      {#if reorder.query}
+      <div class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        {#if reorder.query}
+          <button
+            type="button"
+            class="grid size-6 cursor-pointer place-items-center rounded text-dim hover:text-fg"
+            onclick={() => (reorder.query = '')}
+            aria-label="Clear search"
+          >
+            <X class="h-3.5 w-3.5" />
+          </button>
+        {/if}
         <button
           type="button"
-          class="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer rounded p-0.5 text-dim hover:text-fg"
-          onclick={() => (reorder.query = '')}
-          aria-label="Clear search"
+          class="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-line bg-surface px-2 text-[11px] font-medium text-muted transition hover:border-fg/30 hover:text-fg"
+          onclick={() => (cameraOpen = true)}
+          title="Scan barcode with camera"
         >
-          <X class="h-3.5 w-3.5" />
+          <Camera class="h-3.5 w-3.5 text-ok" />
+          <span>Scan</span>
         </button>
-      {/if}
+      </div>
     </div>
   </div>
 
@@ -289,17 +325,20 @@
               </div>
 
               <!-- Size Matrix Badges -->
-              <div class="mt-3 flex flex-wrap gap-1.5">
+              <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                <span class="text-[10px] font-semibold uppercase text-dim mr-1">
+                  {reorder.locId === 'ALL' ? 'Combined Sizes:' : 'Filter Sizes:'}
+                </span>
                 {#each m.variants as v (v.id)}
                   {@const isZero = v.stock === 0}
                   {@const isLow = v.stock > 0 && v.stock <= 2}
                   <div
-                    class="flex min-w-[46px] flex-col items-center rounded-md border px-2 py-1 text-center
+                    class="flex min-w-[44px] flex-col items-center rounded-md border px-1.5 py-0.5 text-center
                       {isZero
                         ? 'border-bad/25 bg-bad/5'
                         : 'border-line bg-raised/60'}"
                   >
-                    <span class="text-[10px] font-medium text-dim">Sz {v.displaySize}</span>
+                    <span class="text-[9px] font-medium text-dim">Sz {v.displaySize}</span>
                     <strong
                       class="font-mono text-xs {isZero ? 'text-bad' : isLow ? 'text-warn' : 'text-fg'}"
                     >
@@ -307,6 +346,74 @@
                     </strong>
                   </div>
                 {/each}
+              </div>
+
+              <!-- Live Branch Stock Breakdown (KOI BRANCH EKEDA KYLA BALANNA) -->
+              <div class="mt-3 rounded-lg border border-line bg-surface/80 p-2.5">
+                <div class="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-dim">
+                  <span class="flex items-center gap-1.5 text-fg">
+                    <Store class="h-3.5 w-3.5 text-ok" />
+                    <span>Live Branch Stock (ශාඛා තොග තොරතුරු)</span>
+                  </span>
+                  <span class="font-mono text-[11px] text-muted">
+                    Total: <strong class="text-fg font-bold">{m.totalCombinedStock} pairs</strong>
+                  </span>
+                </div>
+
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {#each m.branchStocks as bs (bs.locationId)}
+                    {@const hasStock = bs.totalStock > 0}
+                    {@const isFilterLoc = reorder.locId === bs.locationId}
+                    <div
+                      class="flex flex-col justify-between rounded-lg border p-2.5 transition {isFilterLoc
+                        ? 'border-fg/40 bg-raised ring-1 ring-fg/20'
+                        : hasStock
+                          ? 'border-line bg-raised/40 hover:bg-raised/70'
+                          : 'border-line/40 bg-surface/40 opacity-75'}"
+                    >
+                      <div>
+                        <div class="flex items-center justify-between gap-1">
+                          <span class="truncate text-xs font-bold text-fg">{bs.locationName}</span>
+                          <span
+                            class="chip font-mono text-[11px] font-bold py-0.5 px-1.5 {hasStock
+                              ? 'border-ok/30 bg-ok/10 text-ok'
+                              : 'border-bad/30 bg-bad/10 text-bad'}"
+                          >
+                            {bs.totalStock} prs
+                          </span>
+                        </div>
+
+                        {#if hasStock && bs.availableSizes.length > 0}
+                          <div class="mt-2 flex flex-wrap gap-1">
+                            {#each bs.availableSizes as sz}
+                              <span class="chip py-0 px-1 text-[10px] font-mono bg-surface">
+                                Sz {sz.displaySize}: <strong class="text-fg">{sz.stock}</strong>
+                              </span>
+                            {/each}
+                          </div>
+                        {:else}
+                          <div class="mt-2 text-[11px] text-dim italic">
+                            No stock at this branch
+                          </div>
+                        {/if}
+                      </div>
+
+                      {#if hasStock}
+                        <div class="mt-2.5 pt-2 border-t border-line/40 flex justify-end">
+                          <button
+                            type="button"
+                            class="cursor-pointer text-[10px] font-medium text-muted hover:text-fg inline-flex items-center gap-1"
+                            onclick={() => reorder.sendToTransfer(m.productId, bs.locationId)}
+                            title="Dispatch from {bs.locationName} to transfer"
+                          >
+                            <ArrowLeftRight class="h-3 w-3 text-dim" />
+                            <span>Transfer from here</span>
+                          </button>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
               </div>
             </div>
           {/each}
@@ -606,4 +713,8 @@
   <PrintStockModal
     onclose={() => (printModalOpen = false)}
   />
+{/if}
+
+{#if cameraOpen}
+  <CameraScanner onscan={handleBarcodeScan} onclose={() => (cameraOpen = false)} />
 {/if}

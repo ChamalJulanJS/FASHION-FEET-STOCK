@@ -6,6 +6,7 @@
   import Toasts from './components/Toasts.svelte';
   import AuthModal from './components/AuthModal.svelte';
   import StaffManager from './components/StaffManager.svelte';
+  import BranchStockModal from './components/BranchStockModal.svelte';
   import Transfer from './features/transfer/Transfer.svelte';
   import Reorder from './features/reorder/Reorder.svelte';
   import StockCount from './features/stockcount/StockCount.svelte';
@@ -38,5 +39,8 @@
   <MobileNav />
   <AuthModal />
   <StaffManager />
+  {#if app.branchStockModalOpen}
+    <BranchStockModal />
+  {/if}
   <Toasts />
 </div>

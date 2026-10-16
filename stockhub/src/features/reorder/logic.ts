@@ -1,9 +1,17 @@
 import { app, getShoeDisplaySize, isMenShoe } from '../../lib/app.svelte';
 import type { Variant } from '../../lib/types';
+import { extractBaseSkuAndSize } from '../stockcount/logic';
 
 export interface ModelVariant extends Variant {
   displaySize: string;
   stock: number;
+}
+
+export interface BranchStockSummary {
+  locationId: string;
+  locationName: string;
+  totalStock: number;
+  availableSizes: { size: string; displaySize: string; stock: number }[];
 }
 
 export interface MatchModel {
@@ -14,6 +22,8 @@ export interface MatchModel {
   gender: string;
   productObj: any;
   totalStock: number;
+  totalCombinedStock: number;
+  branchStocks: BranchStockSummary[];
   hasZeroStock: boolean;
   hasLowStock: boolean;
   sellingPrice: number;
@@ -118,7 +128,17 @@ export function getMatchingModels(f: StockFilters) {
         const disp = getShoeDisplaySize(v.size, p).toLowerCase();
         return raw === q || disp.includes(q);
       });
-      if (!matchName && !matchBrand && !matchCat && !matchSku && !matchSize) continue;
+      if (!matchName && !matchBrand && !matchCat && !matchSku && !matchSize) {
+        const { baseSku } = extractBaseSkuAndSize(q);
+        const b = (baseSku || '').trim().toLowerCase();
+        const matchBase =
+          b.length >= 2 &&
+          (pName.toLowerCase().includes(b) ||
+            variants.some(
+              (v) => (v.sku && v.sku.toLowerCase().includes(b)) || (v.barcode && v.barcode.toLowerCase().includes(b)),
+            ));
+        if (!matchBase) continue;
+      }
     }
 
     let modelTotalStock = 0;
@@ -139,6 +159,30 @@ export function getMatchingModels(f: StockFilters) {
     if (status === 'LOW_STOCK' && !hasLowStock) continue;
     if (status === 'IN_STOCK' && hasLowStock) continue;
 
+    let totalCombinedStock = 0;
+    const branchStocks: BranchStockSummary[] = app.locations.map((loc) => {
+      let locTotal = 0;
+      const availableSizes: { size: string; displaySize: string; stock: number }[] = [];
+      for (const v of sortedVars) {
+        const s = app.stockMap.get(`${v.id}_${loc.id}`) || 0;
+        locTotal += s;
+        if (s > 0) {
+          availableSizes.push({
+            size: v.size || '',
+            displaySize: v.displaySize,
+            stock: s,
+          });
+        }
+      }
+      totalCombinedStock += locTotal;
+      return {
+        locationId: loc.id,
+        locationName: loc.name,
+        totalStock: locTotal,
+        availableSizes,
+      };
+    });
+
     matchingModels.push({
       productId,
       name: pName,
@@ -147,6 +191,8 @@ export function getMatchingModels(f: StockFilters) {
       gender: p.gender || '',
       productObj: p,
       totalStock: modelTotalStock,
+      totalCombinedStock,
+      branchStocks,
       hasZeroStock,
       hasLowStock,
       sellingPrice: Number(variants[0].selling_price) || 0,

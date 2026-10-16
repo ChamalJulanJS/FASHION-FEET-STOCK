@@ -2,7 +2,7 @@
   import { app, type HubTab } from '../lib/app.svelte';
   import {
     Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, ClipboardCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
-    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone,
+    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone, Store,
   } from 'lucide-svelte';
 
   let menuOpen = $state(false);
@@ -123,6 +123,18 @@
 
     <!-- Right Utilities -->
     <div class="flex items-center gap-1.5 shrink-0">
+      <button
+        type="button"
+        class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-fg shadow-xs transition hover:border-fg/40 hover:bg-raised"
+        onclick={() => (app.branchStockModalOpen = true)}
+        title="Check Live Branch Stock (ශාඛා තොග පරීක්ෂාව)"
+      >
+        <Store class="h-3.5 w-3.5 text-ok" />
+        <span class="hidden md:inline">Check Stock</span>
+        <span class="hidden lg:inline text-dim">(ශාඛා තොග)</span>
+        <span class="md:hidden">Stock</span>
+      </button>
+
       <button
         type="button"
         class="btn btn-sm gap-2 text-muted hover:text-fg"

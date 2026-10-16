@@ -9,6 +9,7 @@
   import { SoundFx } from '../../lib/sound';
   import type { Variant, Location } from '../../lib/types';
   import type { VoucherDetails } from '../../lib/voucher';
+  import { extractBaseSkuAndSize } from '../stockcount/logic';
   import Voucher from './Voucher.svelte';
   import CameraScanner from './CameraScanner.svelte';
   import TransferLog from '../history/TransferLog.svelte';
@@ -57,10 +58,12 @@
     if (!q0 || q0.trim().length < 2) return [];
     const q = q0.trim().toUpperCase();
     const fromId = app.fromId;
+    const { baseSku } = extractBaseSkuAndSize(q);
+    const b = (baseSku || '').trim().toUpperCase();
     const matches = app.catalog.filter((v) => {
       const barcodeMatch = v.barcode && v.barcode.toUpperCase() === q;
-      const skuMatch = v.sku && v.sku.toUpperCase().includes(q);
-      const nameMatch = v.products?.name && v.products.name.toUpperCase().includes(q);
+      const skuMatch = v.sku && (v.sku.toUpperCase().includes(q) || (b.length >= 2 && v.sku.toUpperCase().includes(b)));
+      const nameMatch = v.products?.name && (v.products.name.toUpperCase().includes(q) || (b.length >= 2 && v.products.name.toUpperCase().includes(b)));
       const brandMatch = v.products?.brand && v.products.brand.toUpperCase().includes(q);
       const dispSz = getShoeDisplaySize(v.size, v.products);
       const sizeMatch = (v.size && v.size.toString().trim() === q) || dispSz.toUpperCase().includes(q);
@@ -142,11 +145,13 @@
   }
 
   function pickVariant(v: Variant, fromScanOrSelect = true) {
+    staged = v;
+    stagedQty = 1;
     if (app.autoScan) {
       addToCart(v, 1);
       SoundFx.scan();
     } else if (fromScanOrSelect) {
-      stage(v);
+      SoundFx.scan();
     }
   }
 
@@ -160,6 +165,19 @@
       pickVariant(exact);
       resetSearch();
       return;
+    }
+    const { baseSku, size } = extractBaseSkuAndSize(raw);
+    if (baseSku && size) {
+      const matchWithSize = app.catalog.find(
+        (v) =>
+          (v.sku && v.sku.toUpperCase() === baseSku.toUpperCase() && v.size && String(v.size).trim() === size) ||
+          (v.barcode && v.barcode.toUpperCase() === q),
+      );
+      if (matchWithSize) {
+        pickVariant(matchWithSize);
+        resetSearch();
+        return;
+      }
     }
     const found = runSearch(raw);
     if (found.length === 1) {
@@ -606,6 +624,21 @@
                         <span class="chip py-0 text-[10px]">Sz {getShoeDisplaySize(v.size, v.products)}</span>
                         {#if v.colour}<span>{v.colour}</span>{/if}
                       </span>
+                      <!-- Live All-Branch stock badges -->
+                      <span class="mt-1.5 flex flex-wrap items-center gap-1">
+                        {#each app.locations as loc}
+                          {@const q = app.getStock(v.id, loc.id)}
+                          <span
+                            class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 border text-[10px] font-mono {q > 0
+                              ? 'border-ok/30 bg-ok/10 text-ok font-semibold'
+                              : 'border-line/40 bg-surface/50 text-dim'}"
+                            title="{loc.name}: {q} pairs"
+                          >
+                            <span class="text-[9px] opacity-75">{loc.name.replace(/branch|office/i, '').trim()}:</span>
+                            <span>{q}</span>
+                          </span>
+                        {/each}
+                      </span>
                     </span>
                     <span class="shrink-0 text-right">
                       <span class="block font-mono text-xs font-semibold {stockTone(st)}">
@@ -654,23 +687,24 @@
             </button>
           </div>
 
-          <!-- Branch Stock Breakdown -->
-          <div class="grid grid-cols-3 gap-2 rounded-lg border border-line bg-surface p-2.5 text-center text-xs">
-            <div class="min-w-0">
-              <div class="truncate text-[10px] uppercase text-dim">{fromLoc?.name ?? 'Source'}</div>
-              <div class="mt-0.5 font-mono font-semibold {stockTone(fromQty)}">{fromQty} prs</div>
-            </div>
-            <div class="min-w-0 border-x border-line px-1">
-              <div class="truncate text-[10px] uppercase text-dim">{toLoc?.name ?? 'Target'}</div>
-              <div class="mt-0.5 font-mono font-semibold {stockTone(toQty)}">{toQty} prs</div>
-            </div>
-            {#if otherLoc}
-              {@const oq = app.getStock(staged.id, otherLoc.id)}
-              <div class="min-w-0">
-                <div class="truncate text-[10px] uppercase text-dim">{otherLoc.name}</div>
-                <div class="mt-0.5 font-mono font-semibold {stockTone(oq)}">{oq} prs</div>
+          <!-- Branch Stock Breakdown (All Branches) -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-lg border border-line bg-surface p-2.5 text-center text-xs">
+            {#each app.locations as loc}
+              {@const isFrom = loc.id === app.fromId}
+              {@const isTo = loc.id === app.toId}
+              {@const q = app.getStock(staged.id, loc.id)}
+              <div class="min-w-0 rounded-md p-2 transition {isFrom ? 'border border-fg/30 bg-raised/80' : isTo ? 'border border-line bg-surface' : 'bg-surface/50 opacity-80'}">
+                <div class="flex items-center justify-center gap-1 text-[10px] font-bold uppercase text-dim">
+                  <span class="truncate">{loc.name}</span>
+                  {#if isFrom}
+                    <span class="chip py-0 px-1 text-[8px] bg-fg text-bg font-bold">FROM</span>
+                  {:else if isTo}
+                    <span class="chip py-0 px-1 text-[8px] border font-bold">TO</span>
+                  {/if}
+                </div>
+                <div class="mt-1 font-mono text-sm font-bold {stockTone(q)}">{q} prs</div>
               </div>
-            {/if}
+            {/each}
           </div>
 
           <!-- Size Matrix -->

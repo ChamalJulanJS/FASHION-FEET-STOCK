@@ -48,6 +48,7 @@ class AppStore {
   authTab = $state<'login' | 'signup' | 'reset'>('login');
   authPrefillEmail = $state('');
   deferredPwaPrompt = $state<any>(null);
+  branchStockModalOpen = $state(false);
 
   private toastSeq = 0;
 

@@ -192,12 +192,12 @@ class ReorderState {
   }
 
   // ---- hand-off to Transfer tab ----
-  sendToTransfer(productId: string) {
+  sendToTransfer(productId: string, specificLocId?: string) {
     const variants = app.productsMap.get(productId);
     if (!variants || variants.length === 0) return;
-    const locId = this.locId !== 'ALL' ? this.locId : app.fromId || app.locations[0]?.id || '';
+    const locId = specificLocId || (this.locId !== 'ALL' ? this.locId : app.fromId || app.locations[0]?.id || '');
     const branchName = app.locations.find((l) => l.id === locId)?.name ?? 'Dispatch Branch';
-    if (this.locId !== 'ALL') app.fromId = locId;
+    app.fromId = locId;
 
     let addedCount = 0;
     let addedPairs = 0;
