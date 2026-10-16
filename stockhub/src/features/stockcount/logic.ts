@@ -20,7 +20,56 @@ export const COMMON_SHOE_COLOURS = [
   'Multi',
 ];
 
-export const STANDARD_SHOE_SIZES = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
+export const EXCEL_SIZES_1_TO_50 = Array.from({ length: 50 }, (_, i) => String(i + 1));
+
+/**
+ * Splits a scanned barcode or SKU where the LAST 2 DIGITS represent the shoe size (01..50)
+ * and the prefix represents the Base Model SKU.
+ * Examples:
+ *  - "SL10537" -> { baseSku: "SL105", size: "37" }
+ *  - "SL10506" -> { baseSku: "SL105", size: "6" }
+ *  - "SFW006-41" -> { baseSku: "SFW006", size: "41" }
+ */
+export function extractBaseSkuAndSize(rawCode: string): { baseSku: string; size: string | null } {
+  const clean = (rawCode || '').trim().toUpperCase();
+  if (!clean) return { baseSku: '', size: null };
+
+  // 1. Check explicit separator first (e.g. SFW006-41 or SFW006_8)
+  const sepMatch = clean.match(/^(.+?)[-_\/](\d{1,2})$/);
+  if (sepMatch) {
+    const num = parseInt(sepMatch[2], 10);
+    if (num >= 1 && num <= 50) {
+      return { baseSku: sepMatch[1].trim(), size: String(num) };
+    }
+  }
+
+  // 2. Check last 2 digits (01 to 50) when total length is at least 4 chars
+  if (clean.length >= 4) {
+    const last2 = clean.slice(-2);
+    if (/^\d{2}$/.test(last2)) {
+      const num = parseInt(last2, 10);
+      if (num >= 1 && num <= 50) {
+        const prefix = clean.slice(0, -2).replace(/[-_\/]+$/, '').trim();
+        if (prefix.length >= 2) {
+          return { baseSku: prefix, size: String(num) };
+        }
+      }
+    }
+  }
+
+  return { baseSku: clean, size: null };
+}
+
+/** Normalize a raw size string so "06" -> "6", "40" -> "40" */
+export function normalizeSizeKey(rawSize?: string | number | null): string {
+  const s = (rawSize ?? '').toString().trim();
+  if (!s) return '-';
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    if (n >= 1 && n <= 50) return String(n);
+  }
+  return s;
+}
 
 export interface CountedVariantLine {
   variantId: string; // Either real Supabase UUID or 'custom_...'
@@ -39,9 +88,9 @@ export interface CountedVariantLine {
 }
 
 export interface CountedModelGroup {
-  groupKey: string; // Unique key per (productId + colour)
+  groupKey: string; // Unique key per (baseSku + colour)
   productId: string;
-  name: string;
+  name: string; // Base Model SKU / Name
   colour: string;
   brand: string;
   category: string;
@@ -83,7 +132,6 @@ export function loadStockCountDraft(): StockCountDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && Array.isArray(parsed.groups)) {
-      // Ensure groupKey and colour exist on migrated v1 items
       for (const g of parsed.groups) {
         if (!g.colour) g.colour = 'All / Default';
         if (!g.groupKey) g.groupKey = `${g.productId}__${g.colour}`;
@@ -159,48 +207,96 @@ export function sortLinesBySize<T extends { size?: string | null }>(lines: T[]):
   });
 }
 
+/**
+ * Finds all catalog variants that share the same Base Model SKU (or product_id),
+ * even if they were saved as separate product records in the database!
+ */
+export function findCatalogVariantsForBaseSku(baseSku: string, fallbackProductId?: string): Variant[] {
+  const cleanBase = baseSku.trim().toUpperCase();
+  const matched = new Map<string, Variant>();
+
+  if (fallbackProductId) {
+    const byPid = app.productsMap.get(fallbackProductId) || [];
+    for (const v of byPid) matched.set(v.id, v);
+  }
+
+  for (const v of app.catalog) {
+    const vSkuSplit = extractBaseSkuAndSize(v.sku || '');
+    const vBarSplit = extractBaseSkuAndSize(v.barcode || '');
+    const pName = (v.products?.name || '').trim().toUpperCase();
+    const pNameSplit = extractBaseSkuAndSize(pName);
+
+    if (
+      vSkuSplit.baseSku === cleanBase ||
+      vBarSplit.baseSku === cleanBase ||
+      pName === cleanBase ||
+      pNameSplit.baseSku === cleanBase
+    ) {
+      matched.set(v.id, v);
+    }
+  }
+
+  return Array.from(matched.values());
+}
+
 export function buildGroupFromCatalogProduct(
   productId: string,
   variants: Variant[],
   locationId: string,
   colourOverride?: string,
+  baseNameOverride?: string,
 ): CountedModelGroup {
   const first = variants[0];
+  const rawProdName = first?.products?.name || first?.sku || 'Shoe Model';
+  const splitName = extractBaseSkuAndSize(rawProdName);
+  const modelName = baseNameOverride || splitName.baseSku || rawProdName;
+
   const p = first?.products || {
     id: productId,
-    name: first?.sku || 'Shoe Model',
+    name: modelName,
     brand: 'Generic',
     category: 'General',
     gender: '',
   };
 
-  // Detect default colour if variants have one
-  const detectedColour =
-    colourOverride ||
-    first?.colour?.trim() ||
-    'All / Default';
+  const detectedColour = colourOverride || first?.colour?.trim() || 'All / Default';
+  const groupKey = `${modelName.toUpperCase()}__${detectedColour}`;
 
-  const groupKey = `${productId}__${detectedColour}`;
-  const sorted = sortLinesBySize(variants);
-  const lines: CountedVariantLine[] = sorted.map((v) => ({
-    variantId: v.id,
-    productId,
-    sku: v.sku || '',
-    barcode: v.barcode || '',
-    size: (v.size || '').toString().trim() || '-',
-    displaySize: getShoeDisplaySize(v.size, p),
-    colour: detectedColour === 'All / Default' ? (v.colour || '') : detectedColour,
-    sellingPrice: Number(v.selling_price) || 0,
-    costPrice: Number(v.cost_price) || 0,
-    systemStock: app.getStock(v.id, locationId),
-    countedQty: 0,
-    isCustom: false,
-  }));
+  // Build lines deduplicated by normalized size so all sizes of the base SKU sit inside one card
+  const bySize = new Map<string, CountedVariantLine>();
+  for (const v of variants) {
+    const splitSku = extractBaseSkuAndSize(v.sku || v.barcode || '');
+    const rawSz = (v.size && v.size.toString().trim()) ? v.size.toString().trim() : (splitSku.size || '-');
+    const normSz = normalizeSizeKey(rawSz);
+    const sysQty = app.getStock(v.id, locationId);
+
+    const existing = bySize.get(normSz);
+    if (existing) {
+      existing.systemStock += sysQty;
+    } else {
+      bySize.set(normSz, {
+        variantId: v.id,
+        productId: v.product_id || productId,
+        sku: v.sku || `${modelName}${normSz}`,
+        barcode: v.barcode || v.sku || '',
+        size: normSz,
+        displaySize: normSz,
+        colour: detectedColour === 'All / Default' ? (v.colour || '') : detectedColour,
+        sellingPrice: Number(v.selling_price) || 0,
+        costPrice: Number(v.cost_price) || 0,
+        systemStock: sysQty,
+        countedQty: 0,
+        isCustom: false,
+      });
+    }
+  }
+
+  const lines = sortLinesBySize(Array.from(bySize.values()));
 
   return {
     groupKey,
     productId,
-    name: p.name || first?.sku || 'Shoe Model',
+    name: modelName,
     colour: detectedColour,
     brand: p.brand || 'Generic',
     category: p.category || 'General',
@@ -219,31 +315,15 @@ export function buildGroupFromCatalogProduct(
 export function cloneGroupForNewColour(source: CountedModelGroup, newColour: string): CountedModelGroup {
   const cleanCol = newColour.trim() || 'Brown';
   const suffixId = `${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
-  const newGroupKey = `${source.productId}__${cleanCol}__${suffixId}`;
+  const newGroupKey = `${source.name.toUpperCase()}__${cleanCol}__${suffixId}`;
 
-  // Ensure standard sizes 36-45 exist if source only had a single '-' size
-  const baseLines =
-    source.lines.length <= 1 && source.lines[0]?.size === '-'
-      ? ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'].map((sz) => ({
-          variantId: `col_${newGroupKey}_${sz}`,
-          productId: source.productId,
-          sku: `${source.name}-${cleanCol.toUpperCase()}-${sz}`,
-          barcode: '',
-          size: sz,
-          displaySize: getShoeDisplaySize(sz, { name: source.name, brand: source.brand, category: source.category }),
-          colour: cleanCol,
-          sellingPrice: source.sellingPrice,
-          costPrice: source.costPrice,
-          systemStock: 0,
-          countedQty: 0,
-          isCustom: true,
-        }))
-      : source.lines.map((l) => ({
-          ...l,
-          variantId: source.isCustomModel ? `col_${newGroupKey}_${l.size}` : l.variantId,
-          colour: cleanCol,
-          countedQty: 0,
-        }));
+  const baseLines = source.lines.map((l) => ({
+    ...l,
+    variantId: `col_${newGroupKey}_${l.size}`,
+    colour: cleanCol,
+    countedQty: 0,
+    isCustom: true,
+  }));
 
   return {
     ...source,
@@ -274,35 +354,31 @@ function triggerCsvDownload(csvContent: string, filename: string) {
 
 /**
  * 1. Detailed Row-per-Size/SKU Excel CSV Export
+ * Leaves zero-counted rows out (or blank instead of 0) so the sheet stays clean.
  */
 export function exportDetailedStockCountCSV(
   groups: CountedModelGroup[],
   locationName: string,
   mode: CountMode,
   sessionTitle: string,
-  onlyNonZero = false,
+  onlyNonZero = true,
 ) {
   const dateStr = new Date().toISOString().slice(0, 10);
   const headers = [
     'Shop / Branch',
     'Count Date',
     'Session / Note',
-    'Mode',
-    'Model Code / Name',
+    'Model SKU / Code',
     'Colour',
     'Brand',
     'Category',
-    'SKU',
-    'Barcode',
-    'Size (UK/EU)',
-    'Raw Size',
-    'Cost Price (Rs)',
+    'Full Barcode / SKU',
+    'Size',
     'Selling Price (Rs)',
     'System Stock',
-    mode === 'audit' ? 'Counted Physical Qty' : 'Added Qty (+)',
+    mode === 'audit' ? 'Counted Qty' : 'Added Qty (+)',
     'Variance / Diff',
-    'Final Shop Stock',
-    'Counted Retail Value (Rs)',
+    'Counted Value (Rs)',
   ];
 
   const rows: string[] = [headers.map(csvCell).join(',')];
@@ -310,8 +386,7 @@ export function exportDetailedStockCountCSV(
   for (const g of groups) {
     const colLabel = g.colour && g.colour !== 'All / Default' ? g.colour : '';
     for (const l of sortLinesBySize(g.lines)) {
-      if (onlyNonZero && l.countedQty === 0 && l.systemStock === 0) continue;
-      const finalStock = mode === 'audit' ? l.countedQty : l.systemStock + l.countedQty;
+      if (onlyNonZero && l.countedQty <= 0) continue;
       const diff = mode === 'audit' ? l.countedQty - l.systemStock : l.countedQty;
       const retailVal = l.countedQty * (l.sellingPrice || g.sellingPrice || 0);
 
@@ -320,22 +395,17 @@ export function exportDetailedStockCountCSV(
           locationName,
           dateStr,
           sessionTitle || 'Shop Stock Count',
-          mode === 'audit' ? 'Physical Audit' : 'Stock In (+Add)',
           g.name,
-          colLabel || l.colour || '-',
+          colLabel || l.colour || '',
           g.brand,
           g.category,
-          l.sku,
-          l.barcode,
-          l.displaySize,
-          l.size,
-          (l.costPrice || g.costPrice || 0).toFixed(2),
-          (l.sellingPrice || g.sellingPrice || 0).toFixed(2),
-          l.systemStock,
-          l.countedQty,
-          diff > 0 ? `+${diff}` : `${diff}`,
-          finalStock,
-          retailVal.toFixed(2),
+          l.barcode || l.sku,
+          normalizeSizeKey(l.size),
+          g.sellingPrice > 0 ? g.sellingPrice.toFixed(2) : '',
+          l.systemStock > 0 ? l.systemStock : '',
+          l.countedQty > 0 ? l.countedQty : '',
+          diff !== 0 ? (diff > 0 ? `+${diff}` : `${diff}`) : '',
+          retailVal > 0 ? retailVal.toFixed(2) : '',
         ]
           .map(csvCell)
           .join(','),
@@ -348,7 +418,8 @@ export function exportDetailedStockCountCSV(
 }
 
 /**
- * 2. Shoe Size-Matrix Excel CSV Export (One row per Model + Colour, Sizes as columns)
+ * 2. Shoe Size-Matrix Excel CSV Export (Sizes 1 to 50 as columns!)
+ * IMPORTANT: Sizes with 0 stock are left COMPLETELY BLANK ("") — never 0!
  */
 export function exportMatrixStockCountCSV(
   groups: CountedModelGroup[],
@@ -357,52 +428,37 @@ export function exportMatrixStockCountCSV(
   sessionTitle: string,
 ) {
   const dateStr = new Date().toISOString().slice(0, 10);
-
-  const sizeSet = new Set<string>();
-  for (const g of groups) {
-    for (const l of g.lines) {
-      if (l.countedQty > 0 || l.systemStock > 0) {
-        sizeSet.add((l.size || '-').trim());
-      }
-    }
-  }
-  const allSizes = sortLinesBySize(Array.from(sizeSet).map((s) => ({ size: s }))).map((x) => x.size);
-  if (allSizes.length === 0) {
-    ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'].forEach((s) => sizeSet.add(s));
-    allSizes.push('36', '37', '38', '39', '40', '41', '42', '43', '44', '45');
-  }
+  const allSizes = EXCEL_SIZES_1_TO_50; // ["1", "2", "3", ..., "50"]
 
   const headers = [
     'Shop / Branch',
     'Date',
-    'Model Code / Name',
+    'Model SKU / Code',
     'Colour',
     'Brand',
     'Category',
     'Selling Price (Rs)',
     ...allSizes.map((s) => `Sz ${s}`),
-    'System Pairs',
-    mode === 'audit' ? 'Counted Pairs' : 'Added Pairs',
-    'Variance',
-    'Total Counted Value (Rs)',
+    'Total Counted Pairs',
+    'Total Value (Rs)',
   ];
 
   const rows: string[] = [headers.map(csvCell).join(',')];
 
   for (const g of groups) {
-    const modelCounted = g.lines.reduce((s, l) => s + l.countedQty, 0);
-    const modelSys = g.lines.reduce((s, l) => s + l.systemStock, 0);
-    if (modelCounted === 0 && modelSys === 0) continue;
+    const modelCounted = g.lines.reduce((s, l) => s + (Number(l.countedQty) || 0), 0);
+    if (modelCounted <= 0) continue;
 
-    const colLabel = g.colour && g.colour !== 'All / Default' ? g.colour : '-';
+    const colLabel = g.colour && g.colour !== 'All / Default' ? g.colour : '';
+
+    // Map each size 1..50 -> if sum > 0 put sum, else put "" (EMPTY, never 0!)
     const sizeCells = allSizes.map((sz) => {
-      const matching = g.lines.filter((l) => (l.size || '-').trim() === sz);
-      const sum = matching.reduce((s, l) => s + l.countedQty, 0);
+      const matching = g.lines.filter((l) => normalizeSizeKey(l.size) === sz);
+      const sum = matching.reduce((s, l) => s + (Number(l.countedQty) || 0), 0);
       return sum > 0 ? sum : '';
     });
 
-    const diff = mode === 'audit' ? modelCounted - modelSys : modelCounted;
-    const totalVal = g.lines.reduce((s, l) => s + l.countedQty * (l.sellingPrice || g.sellingPrice || 0), 0);
+    const totalVal = g.lines.reduce((s, l) => s + (Number(l.countedQty) || 0) * (l.sellingPrice || g.sellingPrice || 0), 0);
 
     rows.push(
       [
@@ -412,12 +468,10 @@ export function exportMatrixStockCountCSV(
         colLabel,
         g.brand,
         g.category,
-        (g.sellingPrice || 0).toFixed(2),
+        g.sellingPrice > 0 ? g.sellingPrice.toFixed(2) : '',
         ...sizeCells,
-        modelSys,
         modelCounted,
-        diff > 0 ? `+${diff}` : `${diff}`,
-        totalVal.toFixed(2),
+        totalVal > 0 ? totalVal.toFixed(2) : '',
       ]
         .map(csvCell)
         .join(','),
@@ -425,7 +479,7 @@ export function exportMatrixStockCountCSV(
   }
 
   const cleanShop = (locationName || 'Shop').replace(/[^a-zA-Z0-9_-]/g, '_');
-  triggerCsvDownload(rows.join('\r\n'), `FashionFeet_StockCount_Matrix_${cleanShop}_${dateStr}.csv`);
+  triggerCsvDownload(rows.join('\r\n'), `FashionFeet_StockCount_Matrix_Sz1-50_${cleanShop}_${dateStr}.csv`);
 }
 
 /**
@@ -459,7 +513,7 @@ export function buildStockCountWhatsApp(
   linesOut.push(`--------------------------------`);
 
   for (const g of groups) {
-    const activeLines = sortLinesBySize(g.lines).filter((l) => l.countedQty > 0 || (mode === 'audit' && l.systemStock > 0));
+    const activeLines = sortLinesBySize(g.lines).filter((l) => l.countedQty > 0);
     if (activeLines.length === 0) continue;
     totalModels++;
     const gSys = g.lines.reduce((s, l) => s + l.systemStock, 0);
@@ -471,27 +525,17 @@ export function buildStockCountWhatsApp(
 
     const colTag = g.colour && g.colour !== 'All / Default' ? ` [${g.colour}]` : '';
     const sizeBreakdown = activeLines
-      .filter((l) => l.countedQty > 0)
-      .map((l) => `Sz ${l.displaySize}: *${l.countedQty}*`)
+      .map((l) => `Sz ${l.size}: *${l.countedQty}*`)
       .join(' | ');
 
-    const diff = gCnt - gSys;
-    const diffTag = mode === 'audit' ? ` (Sys: ${gSys}, Diff: ${diff >= 0 ? '+' + diff : diff})` : '';
-    linesOut.push(`• *${g.name}*${colTag} (${g.brand}) — *${gCnt} prs*${diffTag}`);
+    linesOut.push(`• *${g.name}*${colTag} — *${gCnt} prs*`);
     if (sizeBreakdown) linesOut.push(`   ${sizeBreakdown}`);
   }
 
   linesOut.push(`--------------------------------`);
   linesOut.push(`Models Counted: *${totalModels}*`);
-  if (mode === 'audit') {
-    const netDiff = totalCounted - totalSys;
-    linesOut.push(`System Pairs: *${totalSys}*`);
-    linesOut.push(`Counted Pairs: *${totalCounted}*`);
-    linesOut.push(`Net Variance: *${netDiff >= 0 ? '+' + netDiff : netDiff} pairs*`);
-  } else {
-    linesOut.push(`Total Added Pairs: *+${totalCounted} pairs*`);
-  }
-  linesOut.push(`Counted Value: *${fmtMoney(totalValue)}*`);
+  linesOut.push(`Total Counted Pairs: *${totalCounted}*`);
+  if (totalValue > 0) linesOut.push(`Counted Value: *${fmtMoney(totalValue)}*`);
 
   return linesOut.join('\n');
 }
@@ -516,7 +560,7 @@ export function printStockCountSheet(
   for (const g of groups) {
     const gSys = g.lines.reduce((s, l) => s + l.systemStock, 0);
     const gCnt = g.lines.reduce((s, l) => s + l.countedQty, 0);
-    if (gCnt === 0 && gSys === 0) continue;
+    if (gCnt === 0) continue;
     totalModels++;
     const gVal = g.lines.reduce((s, l) => s + l.countedQty * (l.sellingPrice || g.sellingPrice || 0), 0);
     totalSys += gSys;
@@ -526,17 +570,10 @@ export function printStockCountSheet(
     const colLabel = g.colour && g.colour !== 'All / Default' ? ` • Colour: <b>${g.colour}</b>` : '';
 
     const sizesHtml = sortLinesBySize(g.lines)
-      .filter((l) => l.countedQty > 0 || l.systemStock > 0)
+      .filter((l) => l.countedQty > 0)
       .map((l) => {
-        const lDiff = l.countedQty - l.systemStock;
-        const badgeStyle =
-          mode === 'audit' && lDiff !== 0
-            ? lDiff > 0
-              ? 'border-color:#16a34a;background:#f0fdf4;'
-              : 'border-color:#dc2626;background:#fef2f2;'
-            : 'border-color:#d4d4d8;background:#fafafa;';
-        return `<span style="display:inline-block;border:1px solid;${badgeStyle}border-radius:4px;padding:2px 6px;margin:2px;font-size:11px;font-family:monospace;">
-          <b>Sz ${l.displaySize}:</b> ${l.countedQty}${mode === 'audit' ? ` <span style="color:#71717a;">(sys:${l.systemStock})</span>` : ''}
+        return `<span style="display:inline-block;border:1px solid #d4d4d8;background:#fafafa;border-radius:4px;padding:2px 6px;margin:2px;font-size:11px;font-family:monospace;">
+          <b>Sz ${l.size}:</b> ${l.countedQty}
         </span>`;
       })
       .join('');
@@ -545,20 +582,15 @@ export function printStockCountSheet(
       <tr>
         <td style="padding:8px;border-bottom:1px solid #e4e4e7;font-weight:700;">
           ${g.name}
-          <div style="font-size:11px;font-weight:400;color:#71717a;">${g.brand} • ${g.category}${colLabel} • ${fmtMoney(g.sellingPrice)}</div>
+          <div style="font-size:11px;font-weight:400;color:#71717a;">${g.brand} • ${g.category}${colLabel}</div>
         </td>
         <td style="padding:8px;border-bottom:1px solid #e4e4e7;">${sizesHtml || '-'}</td>
-        <td style="padding:8px;border-bottom:1px solid #e4e4e7;text-align:right;font-family:monospace;">${gSys}</td>
         <td style="padding:8px;border-bottom:1px solid #e4e4e7;text-align:right;font-family:monospace;font-weight:700;font-size:14px;">${gCnt}</td>
-        <td style="padding:8px;border-bottom:1px solid #e4e4e7;text-align:right;font-family:monospace;font-weight:700;color:${diff < 0 ? '#dc2626' : diff > 0 ? '#16a34a' : '#18181b'};">
-          ${diff > 0 ? '+' + diff : diff}
-        </td>
-        <td style="padding:8px;border-bottom:1px solid #e4e4e7;text-align:right;font-family:monospace;">${fmtMoney(gVal)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e4e4e7;text-align:right;font-family:monospace;">${gVal > 0 ? fmtMoney(gVal) : '-'}</td>
       </tr>
     `;
   }
 
-  const netDiff = mode === 'audit' ? totalCounted - totalSys : totalCounted;
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -595,19 +627,15 @@ export function printStockCountSheet(
   </div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-label">Models Counted</div><div class="kpi-val">${totalModels}</div></div>
-    <div class="kpi"><div class="kpi-label">System Pairs</div><div class="kpi-val">${totalSys}</div></div>
-    <div class="kpi"><div class="kpi-label">${mode === 'audit' ? 'Counted Pairs' : 'Added Pairs'}</div><div class="kpi-val">${totalCounted}</div></div>
-    <div class="kpi"><div class="kpi-label">Variance</div><div class="kpi-val">${netDiff > 0 ? '+' + netDiff : netDiff}</div></div>
+    <div class="kpi"><div class="kpi-label">Total Counted Pairs</div><div class="kpi-val">${totalCounted}</div></div>
     <div class="kpi"><div class="kpi-label">Counted Retail Value</div><div class="kpi-val">${fmtMoney(totalValue)}</div></div>
   </div>
   <table>
     <thead>
       <tr>
         <th>Shoe Model & Colour</th>
-        <th>Size Breakdown</th>
-        <th style="text-align:right;">System</th>
-        <th style="text-align:right;">Counted</th>
-        <th style="text-align:right;">Diff</th>
+        <th>Counted Sizes</th>
+        <th style="text-align:right;">Total Pairs</th>
         <th style="text-align:right;">Value</th>
       </tr>
     </thead>

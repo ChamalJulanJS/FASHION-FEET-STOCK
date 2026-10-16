@@ -16,6 +16,9 @@
     type CountedVariantLine,
     type SavedStockSnapshot,
     COMMON_SHOE_COLOURS,
+    extractBaseSkuAndSize,
+    normalizeSizeKey,
+    findCatalogVariantsForBaseSku,
     loadStockCountDraft,
     saveStockCountDraft,
     clearStockCountDraft,
@@ -82,6 +85,60 @@
   let debounceTimer: ReturnType<typeof setTimeout>;
   let draftLoaded = $state(false);
 
+  /**
+   * Automatically merges any previously split cards that share the same Base SKU + Colour
+   * (e.g., if 4 slippers were scanned earlier as 4 separate cards because of the last-2-digit size).
+   */
+  function consolidateSplitGroups(rawGroups: CountedModelGroup[]): CountedModelGroup[] {
+    const mergedMap = new Map<string, CountedModelGroup>();
+
+    for (const g of rawGroups) {
+      const { baseSku, size: extractedSz } = extractBaseSkuAndSize(g.name);
+      const cleanName = baseSku || g.name.trim().toUpperCase();
+      const col = g.colour || 'All / Default';
+      const key = `${cleanName}__${col.toUpperCase()}`;
+
+      let target = mergedMap.get(key);
+      if (!target) {
+        target = {
+          ...g,
+          groupKey: key,
+          name: cleanName,
+          colour: col,
+          lines: [],
+        };
+        mergedMap.set(key, target);
+      }
+
+      for (const l of g.lines) {
+        const lineSplit = extractBaseSkuAndSize(l.barcode || l.sku || '');
+        const resolvedSz =
+          l.size && l.size !== '-'
+            ? normalizeSizeKey(l.size)
+            : extractedSz || lineSplit.size || '-';
+
+        // If this was an auto-generated 36-45 empty line on a card that actually had a specific barcode size,
+        // transfer any default count onto the extracted size
+        const existingLine = target.lines.find((x) => normalizeSizeKey(x.size) === resolvedSz);
+        if (existingLine) {
+          existingLine.countedQty += Number(l.countedQty) || 0;
+          existingLine.systemStock = Math.max(existingLine.systemStock, Number(l.systemStock) || 0);
+        } else {
+          target.lines.push({
+            ...l,
+            size: resolvedSz,
+            displaySize: resolvedSz,
+            countedQty: Number(l.countedQty) || 0,
+          });
+        }
+      }
+
+      target.lines = sortLinesBySize(target.lines);
+    }
+
+    return Array.from(mergedMap.values());
+  }
+
   function persistNow() {
     if (!draftLoaded) return;
     const now = new Date();
@@ -105,7 +162,7 @@
       mode = saved.mode || 'audit';
       sessionTitle = saved.sessionTitle || '';
       notes = saved.notes || '';
-      groups = saved.groups || [];
+      groups = consolidateSplitGroups(saved.groups || []);
       if (groups.length > 0) activeGroupKey = groups[0].groupKey;
       lastSavedTime = new Date(saved.updatedAt || Date.now()).toLocaleTimeString('en-GB', {
         hour: '2-digit',
@@ -137,11 +194,11 @@
     }
   });
 
-  // Deep reactive auto-save whenever anything in groups/settings changes
   $effect(() => {
     if (!draftLoaded) return;
-    // Touch deep fields so Svelte 5 tracks every nested edit
-    const _touch = groups.map((g) => `${g.name}_${g.colour}_${g.sellingPrice}_${g.lines.map((l) => `${l.size}:${l.countedQty}`).join(',')}`).join('|');
+    const _touch = groups
+      .map((g) => `${g.name}_${g.colour}_${g.sellingPrice}_${g.lines.map((l) => `${l.size}:${l.countedQty}`).join(',')}`)
+      .join('|');
     const _meta = `${locationId}_${mode}_${sessionTitle}_${notes}`;
     void _touch;
     void _meta;
@@ -178,8 +235,9 @@
     return { modelsCount, countedModels, totalSys, totalCounted, totalValue, netDiff, varianceLines };
   });
 
-  // ---------------- catalog search & barcode scan ----------------
+  // ---------------- catalog search & Smart Barcode Scanner ----------------
   interface ModelSearchHit {
+    baseSku: string;
     productId: string;
     name: string;
     brand: string;
@@ -188,18 +246,22 @@
     shopStock: number;
     variants: Variant[];
     matchedVariant?: Variant;
+    matchedSize?: string | null;
   }
 
   function searchModels(q0: string): ModelSearchHit[] {
     if (!q0 || q0.trim().length < 1) return [];
     const q = q0.trim().toUpperCase();
-    const hits: ModelSearchHit[] = [];
+    const { baseSku: qBase, size: qSize } = extractBaseSkuAndSize(q);
+    const hitsByBase = new Map<string, ModelSearchHit>();
 
     for (const [productId, variants] of app.productsMap.entries()) {
       if (!variants || variants.length === 0) continue;
       const first = variants[0];
       const p = first.products;
-      const name = p?.name || first.sku || 'Shoe Model';
+      const rawName = p?.name || first.sku || 'Shoe Model';
+      const { baseSku: modelBase } = extractBaseSkuAndSize(rawName);
+      const cleanModelName = modelBase || rawName;
       const brand = p?.brand || 'Generic';
       const category = p?.category || 'General';
 
@@ -210,10 +272,14 @@
       );
       const partialVariant = variants.find(
         (v) =>
-          (v.barcode && v.barcode.toUpperCase() === q) ||
-          (v.sku && v.sku.toUpperCase().includes(q)),
+          (v.barcode && v.barcode.toUpperCase().includes(q)) ||
+          (v.sku && v.sku.toUpperCase().includes(q)) ||
+          (qBase && v.sku && extractBaseSkuAndSize(v.sku).baseSku === qBase),
       );
-      const nameMatch = name.toUpperCase().includes(q);
+      const nameMatch =
+        rawName.toUpperCase().includes(q) ||
+        cleanModelName.toUpperCase().includes(q) ||
+        (qBase.length >= 2 && cleanModelName.toUpperCase() === qBase);
       const brandMatch = brand.toUpperCase().includes(q);
       const catMatch = category.toUpperCase().includes(q);
 
@@ -222,25 +288,38 @@
       let shopStock = 0;
       for (const v of variants) shopStock += app.getStock(v.id, locationId);
 
-      hits.push({
-        productId,
-        name,
-        brand,
-        category,
-        sellingPrice: Number(first.selling_price) || 0,
-        shopStock,
-        variants,
-        matchedVariant: exactVariant || partialVariant,
-      });
+      const key = cleanModelName.toUpperCase();
+      const existingHit = hitsByBase.get(key);
+      if (existingHit) {
+        for (const v of variants) {
+          if (!existingHit.variants.some((ev) => ev.id === v.id)) existingHit.variants.push(v);
+        }
+        existingHit.shopStock += shopStock;
+        if (exactVariant) existingHit.matchedVariant = exactVariant;
+      } else {
+        hitsByBase.set(key, {
+          baseSku: key,
+          productId,
+          name: cleanModelName,
+          brand,
+          category,
+          sellingPrice: Number(first.selling_price) || 0,
+          shopStock,
+          variants: [...variants],
+          matchedVariant: exactVariant || partialVariant,
+          matchedSize: qSize,
+        });
+      }
     }
 
+    const hits = Array.from(hitsByBase.values());
     hits.sort((a, b) => {
-      const aEx = a.matchedVariant && ((a.matchedVariant.barcode?.toUpperCase() === q) || (a.matchedVariant.sku?.toUpperCase() === q));
-      const bEx = b.matchedVariant && ((b.matchedVariant.barcode?.toUpperCase() === q) || (b.matchedVariant.sku?.toUpperCase() === q));
+      const aEx = a.matchedVariant && (a.matchedVariant.barcode?.toUpperCase() === q || a.matchedVariant.sku?.toUpperCase() === q);
+      const bEx = b.matchedVariant && (b.matchedVariant.barcode?.toUpperCase() === q || b.matchedVariant.sku?.toUpperCase() === q);
       if (aEx && !bEx) return -1;
       if (!aEx && bEx) return 1;
-      if (a.name.toUpperCase().startsWith(q) && !b.name.toUpperCase().startsWith(q)) return -1;
-      if (!a.name.toUpperCase().startsWith(q) && b.name.toUpperCase().startsWith(q)) return 1;
+      if (a.name.toUpperCase().startsWith(qBase) && !b.name.toUpperCase().startsWith(qBase)) return -1;
+      if (!a.name.toUpperCase().startsWith(qBase) && b.name.toUpperCase().startsWith(qBase)) return 1;
       return b.shopStock - a.shopStock;
     });
 
@@ -270,189 +349,204 @@
     persistNow();
     setTimeout(() => {
       if (lastScannedVariantId === vid) lastScannedVariantId = null;
-    }, 1200);
-  }
-
-  function ensureModelGroup(productId: string, variants: Variant[]): CountedModelGroup {
-    // Prefer currently active group if it belongs to the same productId (e.g. when user switched to Brown colour of this model)
-    if (activeGroupKey) {
-      const activeIdx = groups.findIndex((g) => g.groupKey === activeGroupKey && g.productId === productId);
-      if (activeIdx !== -1) {
-        const grp = groups[activeIdx];
-        if (activeIdx > 0) {
-          groups.splice(activeIdx, 1);
-          groups.unshift(grp);
-        }
-        return groups[0];
-      }
-    }
-
-    const existingIdx = groups.findIndex((g) => g.productId === productId);
-    if (existingIdx !== -1) {
-      const grp = groups[existingIdx];
-      if (existingIdx > 0) {
-        groups.splice(existingIdx, 1);
-        groups.unshift(grp);
-      }
-      return groups[0];
-    }
-    const newGroup = buildGroupFromCatalogProduct(productId, variants, locationId);
-    groups.unshift(newGroup);
-    return groups[0];
-  }
-
-  function scanOrAddVariant(v: Variant, incrementQty = 1) {
-    const pid = v.product_id || v.products?.id || v.id;
-    const allVars = app.productsMap.get(pid) || [v];
-    const group = ensureModelGroup(pid, allVars);
-    const line = group.lines.find((l) => l.variantId === v.id || l.size === (v.size || '').trim());
-    if (line) {
-      line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + incrementQty);
-      line.lastScannedAt = Date.now();
-      flashVariant(group.groupKey, line.variantId);
-    } else {
-      flashVariant(group.groupKey, v.id);
-    }
-  }
-
-  function selectModelFromSearch(hit: ModelSearchHit) {
-    const group = ensureModelGroup(hit.productId, hit.variants);
-    activeGroupKey = group.groupKey;
-    if (hit.matchedVariant && app.autoScan) {
-      scanOrAddVariant(hit.matchedVariant, 1);
-      app.toast(`+1 Counted: ${hit.name} (Sz ${getShoeDisplaySize(hit.matchedVariant.size, hit.matchedVariant.products)})`, 'success');
-    } else {
-      SoundFx.scan();
-      persistNow();
-      app.toast(`Selected ${hit.name} — Tap sizes (36–45) or Colour below!`, 'info');
-    }
-    query = '';
-    debounced = '';
-    showResults = false;
-  }
-
-  function tryIncrementExistingInSheet(q: string): boolean {
-    // Check active group first (in case multiple colours of same code exist)
-    const ordered = activeGroupKey
-      ? [...groups].sort((a, b) => (a.groupKey === activeGroupKey ? -1 : b.groupKey === activeGroupKey ? 1 : 0))
-      : groups;
-
-    for (const g of ordered) {
-      const line = g.lines.find(
-        (l) =>
-          (l.barcode && l.barcode.toUpperCase() === q) ||
-          (l.sku && l.sku.toUpperCase() === q),
-      );
-      if (line) {
-        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
-        line.lastScannedAt = Date.now();
-        const realIdx = groups.findIndex((x) => x.groupKey === g.groupKey);
-        if (realIdx > 0) {
-          groups.splice(realIdx, 1);
-          groups.unshift(g);
-        }
-        flashVariant(g.groupKey, line.variantId);
-        const colTag = g.colour && g.colour !== 'All / Default' ? ` [${g.colour}]` : '';
-        app.toast(
-          `+1 Counted: ${g.name}${colTag} • Sz ${line.displaySize} (Total: ${line.countedQty})`,
-          'success',
-        );
-        return true;
-      }
-    }
-    return false;
+    }, 1400);
   }
 
   /**
-   * Automatically adds or increments a barcode/code that is NOT in the system catalog.
-   * Creates full 36-45 size matrix so scanning multiple shoes of the same design/code is effortless!
+   * Core Smart Barcode & SKU Handler:
+   * 1. Extracts Base SKU + Last 2 Digits Size (01..50).
+   * 2. Searches the ENTIRE Stock Count Sheet (`groups`) from top to bottom.
+   *    If this Base SKU was already scanned earlier (even in another part of the shop!),
+   *    moves that existing card to the top and adds +1 to that size!
+   * 3. Otherwise creates ONE unified card for the Base SKU (combining any catalog variants)
+   *    and sets the scanned size to +1.
    */
-  function countUnlistedBarcode(rawCode: string) {
-    const q = rawCode.trim().toUpperCase();
+  function processSmartScan(rawInput: string, incrementBy = 1) {
+    const q = rawInput.trim().toUpperCase();
     if (!q) return;
 
-    if (tryIncrementExistingInSheet(q)) return;
-
-    // Check if barcode has a trailing size like MODEL-41 or MODEL_42
-    const szMatch = q.match(/^(.+?)[-_\/](\d{1,2}(?:\.5)?)$/);
-    const modelName = szMatch ? szMatch[1].trim() : q;
-    const detectedSize = szMatch ? szMatch[2] : null;
-
-    // Check if an unlisted group with this modelName already exists (preferring activeGroupKey if matching)
-    let existingGrpIdx = groups.findIndex(
-      (g) => g.groupKey === activeGroupKey && g.name.toUpperCase() === modelName,
+    // 1. Check if an exact variant in catalog has this barcode/SKU
+    const exactCatalogVar = app.catalog.find(
+      (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
     );
-    if (existingGrpIdx === -1) {
-      existingGrpIdx = groups.findIndex((g) => g.name.toUpperCase() === modelName);
+
+    // 2. Determine Base Model SKU and Size (Last 2 digits = Size 1..50)
+    const splitFromBarcode = extractBaseSkuAndSize(q);
+    let baseSku = splitFromBarcode.baseSku;
+    let detectedSize = splitFromBarcode.size;
+
+    if (exactCatalogVar) {
+      const catProdName = (exactCatalogVar.products?.name || exactCatalogVar.sku || '').trim();
+      const splitProd = extractBaseSkuAndSize(catProdName);
+      const splitVarSku = extractBaseSkuAndSize(exactCatalogVar.sku || '');
+
+      // If catalog variant has an explicit size field (1..50), use it; otherwise use the last-2-digit size!
+      const rawCatSz = (exactCatalogVar.size || '').toString().trim();
+      if (rawCatSz && rawCatSz !== '-') {
+        detectedSize = normalizeSizeKey(rawCatSz);
+      } else if (splitVarSku.size) {
+        detectedSize = splitVarSku.size;
+      }
+
+      // Use the stripped base SKU so 4 variants saved as separate products still merge into 1 card!
+      if (splitVarSku.size && splitVarSku.baseSku) {
+        baseSku = splitVarSku.baseSku;
+      } else if (splitProd.size && splitProd.baseSku) {
+        baseSku = splitProd.baseSku;
+      } else if (catProdName) {
+        baseSku = catProdName.toUpperCase();
+      }
     }
 
-    if (existingGrpIdx !== -1) {
-      const grp = groups[existingGrpIdx];
-      if (existingGrpIdx > 0) {
-        groups.splice(existingGrpIdx, 1);
+    const cleanBase = (baseSku || q).trim().toUpperCase();
+
+    // 3. Search ENTIRE existing sheet (`groups`) for a matching card (preferring active colour if same base SKU)
+    let existingIdx = groups.findIndex(
+      (g) => g.groupKey === activeGroupKey && g.name.trim().toUpperCase() === cleanBase,
+    );
+    if (existingIdx === -1) {
+      existingIdx = groups.findIndex((g) => g.name.trim().toUpperCase() === cleanBase);
+    }
+    // Also check if any line inside `groups` has this exact barcode
+    if (existingIdx === -1) {
+      existingIdx = groups.findIndex((g) =>
+        g.lines.some((l) => (l.barcode && l.barcode.toUpperCase() === q) || (l.sku && l.sku.toUpperCase() === q)),
+      );
+    }
+
+    if (existingIdx !== -1) {
+      const grp = groups[existingIdx];
+      const wasFurtherDown = existingIdx > 0;
+      if (wasFurtherDown) {
+        groups.splice(existingIdx, 1);
         groups.unshift(grp);
       }
-      if (detectedSize) {
-        let line = grp.lines.find((l) => l.size.toUpperCase() === detectedSize);
-        if (!line) {
-          const newVid = `unlisted_${Date.now()}_${detectedSize}`;
-          line = {
-            variantId: newVid,
-            productId: grp.productId,
-            sku: `${modelName}-${detectedSize}`,
-            barcode: q,
-            size: detectedSize,
-            displaySize: getShoeDisplaySize(detectedSize, { name: grp.name }),
-            colour: grp.colour,
-            sellingPrice: grp.sellingPrice,
-            costPrice: 0,
-            systemStock: 0,
-            countedQty: 0,
-            isCustom: true,
-          };
-          grp.lines = sortLinesBySize([...grp.lines, line]);
-        }
-        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
+
+      // Find or create the size line inside this existing group
+      const targetSz = detectedSize ? normalizeSizeKey(detectedSize) : null;
+      let line = grp.lines.find(
+        (l) =>
+          (targetSz && normalizeSizeKey(l.size) === targetSz) ||
+          (l.barcode && l.barcode.toUpperCase() === q) ||
+          (l.sku && l.sku.toUpperCase() === q),
+      );
+
+      if (!line && targetSz) {
+        const newVid = exactCatalogVar?.id || `sz_${grp.groupKey}_${targetSz}_${Date.now()}`;
+        line = {
+          variantId: newVid,
+          productId: exactCatalogVar?.product_id || grp.productId,
+          sku: exactCatalogVar?.sku || `${cleanBase}${targetSz.padStart(2, '0')}`,
+          barcode: q,
+          size: targetSz,
+          displaySize: targetSz,
+          colour: grp.colour,
+          sellingPrice: Number(exactCatalogVar?.selling_price || grp.sellingPrice) || 0,
+          costPrice: Number(exactCatalogVar?.cost_price || grp.costPrice) || 0,
+          systemStock: exactCatalogVar ? app.getStock(exactCatalogVar.id, locationId) : 0,
+          countedQty: 0,
+          isCustom: !exactCatalogVar,
+        };
+        grp.lines = sortLinesBySize([...grp.lines, line]);
+      }
+
+      if (line) {
+        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + incrementBy);
+        line.lastScannedAt = Date.now();
         flashVariant(grp.groupKey, line.variantId);
-        app.toast(`+1 Counted: ${grp.name} [${grp.colour}] • Sz ${line.displaySize}`, 'success');
+        const colTag = grp.colour && grp.colour !== 'All / Default' ? ` [${grp.colour}]` : '';
+        app.toast(
+          wasFurtherDown
+            ? `+${incrementBy} Added to Earlier Model: ${grp.name}${colTag} • Sz ${line.size} (Total: ${line.countedQty})`
+            : `+${incrementBy} Counted: ${grp.name}${colTag} • Sz ${line.size} (Total: ${line.countedQty})`,
+          'success',
+        );
       } else {
-        // Generic model code scanned again -> focus active bar so user can tap the size (36..45)
         activeGroupKey = grp.groupKey;
         SoundFx.scan();
-        app.toast(`Selected ${grp.name} [${grp.colour}] — Tap the shoe size (36–45) below!`, 'info');
+        app.toast(`Selected ${grp.name} — Tap the shoe size below!`, 'info');
       }
       return;
     }
 
-    // Brand new Unlisted Model/Barcode -> Create with full 36-45 Size Matrix so user can tap any size!
-    const pid = `unlisted_grp_${Date.now()}`;
-    const defaultCol = 'Black';
-    const gKey = `${pid}__${defaultCol}`;
-    const defaultSizes = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
-    if (detectedSize && !defaultSizes.includes(detectedSize)) defaultSizes.push(detectedSize);
+    // 4. Not yet in sheet -> Check if catalog has variants for this Base SKU
+    const catalogVars = findCatalogVariantsForBaseSku(cleanBase, exactCatalogVar?.product_id);
+    if (catalogVars.length > 0) {
+      const pid = exactCatalogVar?.product_id || catalogVars[0].product_id || catalogVars[0].id;
+      const newGrp = buildGroupFromCatalogProduct(pid, catalogVars, locationId, undefined, cleanBase);
+      const targetSz = detectedSize ? normalizeSizeKey(detectedSize) : null;
+
+      let line = newGrp.lines.find(
+        (l) =>
+          (targetSz && normalizeSizeKey(l.size) === targetSz) ||
+          (exactCatalogVar && l.variantId === exactCatalogVar.id),
+      );
+
+      if (!line && targetSz) {
+        line = {
+          variantId: exactCatalogVar?.id || `sz_${newGrp.groupKey}_${targetSz}`,
+          productId: pid,
+          sku: q,
+          barcode: q,
+          size: targetSz,
+          displaySize: targetSz,
+          colour: newGrp.colour,
+          sellingPrice: newGrp.sellingPrice,
+          costPrice: newGrp.costPrice,
+          systemStock: exactCatalogVar ? app.getStock(exactCatalogVar.id, locationId) : 0,
+          countedQty: 0,
+          isCustom: !exactCatalogVar,
+        };
+        newGrp.lines = sortLinesBySize([...newGrp.lines, line]);
+      }
+
+      if (line && incrementBy > 0) {
+        line.countedQty = incrementBy;
+        line.lastScannedAt = Date.now();
+      }
+      groups.unshift(newGrp);
+      flashVariant(newGrp.groupKey, line?.variantId || newGrp.lines[0]?.variantId || '');
+      app.toast(
+        line
+          ? `+${incrementBy} Counted: ${newGrp.name} • Sz ${line.size}`
+          : `Added ${newGrp.name} to Stock Sheet`,
+        'success',
+      );
+      return;
+    }
+
+    // 5. Brand-new Unlisted Model -> Create ONE card with Base SKU and the detected size!
+    const pid = `unlisted_${cleanBase}_${Date.now()}`;
+    const defaultCol = 'All / Default';
+    const gKey = `${cleanBase}__${defaultCol}`;
+    const targetSz = detectedSize ? normalizeSizeKey(detectedSize) : null;
+
+    // Seed common sizes plus the scanned size so the card has a clean size matrix ready
+    const seedSizes = new Set<string>(['36', '37', '38', '39', '40', '41', '42', '43', '44', '45']);
+    if (targetSz) seedSizes.add(targetSz);
 
     const lines: CountedVariantLine[] = sortLinesBySize(
-      defaultSizes.map((sz) => ({
-        variantId: `${pid}_sz_${sz}`,
+      Array.from(seedSizes).map((sz) => ({
+        variantId: `${gKey}_sz_${sz}`,
         productId: pid,
-        sku: `${modelName}-${sz}`,
-        barcode: detectedSize === sz ? q : '',
+        sku: `${cleanBase}${sz.padStart(2, '0')}`,
+        barcode: targetSz === sz ? q : '',
         size: sz,
-        displaySize: getShoeDisplaySize(sz, { name: modelName }),
+        displaySize: sz,
         colour: defaultCol,
         sellingPrice: 0,
         costPrice: 0,
         systemStock: 0,
-        countedQty: detectedSize ? (detectedSize === sz ? 1 : 0) : sz === '40' ? 1 : 0,
+        countedQty: targetSz ? (targetSz === sz ? incrementBy : 0) : 0,
         isCustom: true,
-        lastScannedAt: Date.now(),
+        lastScannedAt: targetSz === sz ? Date.now() : undefined,
       })),
     );
 
     const newGroup: CountedModelGroup = {
       groupKey: gKey,
       productId: pid,
-      name: modelName,
+      name: cleanBase,
       colour: defaultCol,
       brand: 'Unlisted',
       category: 'Scanned Model',
@@ -464,14 +558,41 @@
     };
 
     groups.unshift(newGroup);
-    const targetLine = lines.find((l) => l.countedQty > 0) || lines[0];
-    flashVariant(gKey, targetLine.variantId);
+    const hitLine = lines.find((l) => l.countedQty > 0) || lines[0];
+    flashVariant(gKey, hitLine.variantId);
     app.toast(
-      detectedSize
-        ? `New Code "${modelName}" (Sz ${detectedSize}) counted (+1)!`
-        : `New Code "${modelName}" added with Sizes 36–45! Tap sizes to count.`,
+      targetSz
+        ? `+${incrementBy} Counted: Model "${cleanBase}" • Sz ${targetSz}`
+        : `Added Model "${cleanBase}" — Tap sizes below to count!`,
       'success',
     );
+  }
+
+  function selectModelFromSearch(hit: ModelSearchHit) {
+    if (hit.matchedVariant && app.autoScan) {
+      processSmartScan(hit.matchedVariant.barcode || hit.matchedVariant.sku || hit.name, 1);
+    } else {
+      const allVars = findCatalogVariantsForBaseSku(hit.name, hit.productId);
+      const existingIdx = groups.findIndex((g) => g.name.toUpperCase() === hit.name.toUpperCase());
+      if (existingIdx !== -1) {
+        const grp = groups[existingIdx];
+        if (existingIdx > 0) {
+          groups.splice(existingIdx, 1);
+          groups.unshift(grp);
+        }
+        activeGroupKey = grp.groupKey;
+      } else {
+        const newGrp = buildGroupFromCatalogProduct(hit.productId, allVars.length ? allVars : hit.variants, locationId, undefined, hit.name);
+        groups.unshift(newGrp);
+        activeGroupKey = newGrp.groupKey;
+      }
+      SoundFx.scan();
+      persistNow();
+      app.toast(`Selected ${hit.name} — Tap sizes below!`, 'info');
+    }
+    query = '';
+    debounced = '';
+    showResults = false;
   }
 
   function handleSearchKeydown(e: KeyboardEvent) {
@@ -484,35 +605,7 @@
     if (!q) return;
     e.preventDefault();
 
-    if (tryIncrementExistingInSheet(q)) {
-      query = '';
-      debounced = '';
-      showResults = false;
-      return;
-    }
-
-    const exactVar = app.catalog.find(
-      (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
-    );
-    if (exactVar) {
-      scanOrAddVariant(exactVar, 1);
-      app.toast(
-        `Scanned +1: ${exactVar.products?.name || exactVar.sku} • Sz ${getShoeDisplaySize(exactVar.size, exactVar.products)}`,
-        'success',
-      );
-      query = '';
-      debounced = '';
-      showResults = false;
-      return;
-    }
-
-    const hits = searchModels(q);
-    if (hits.length > 0) {
-      selectModelFromSearch(hits[0]);
-      return;
-    }
-
-    countUnlistedBarcode(q);
+    processSmartScan(q, 1);
     query = '';
     debounced = '';
     showResults = false;
@@ -521,16 +614,7 @@
   function handleCameraScan(code: string) {
     const q = code.trim().toUpperCase();
     if (!q) return;
-    if (tryIncrementExistingInSheet(q)) return;
-
-    const exactVar = app.catalog.find(
-      (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
-    );
-    if (exactVar) {
-      scanOrAddVariant(exactVar, 1);
-      return;
-    }
-    countUnlistedBarcode(q);
+    processSmartScan(q, 1);
   }
 
   // ---------------- Colour management (Same Code, Different Colours) ----------------
@@ -549,7 +633,6 @@
       return;
     }
 
-    // Check if this exact model + colour already exists
     const existing = groups.find(
       (g) => g.name.toUpperCase() === src.name.toUpperCase() && g.colour.toUpperCase() === clean.toUpperCase(),
     );
@@ -598,7 +681,7 @@
     locationId = snap.locationId || locationId;
     mode = snap.mode;
     sessionTitle = snap.title;
-    groups = JSON.parse(JSON.stringify(snap.groups));
+    groups = consolidateSplitGroups(JSON.parse(JSON.stringify(snap.groups)));
     activeGroupKey = groups[0]?.groupKey || null;
     snapshotsModalOpen = false;
     persistNow();
@@ -619,8 +702,12 @@
     for (const [productId, variants] of app.productsMap.entries()) {
       const hasStock = variants.some((v) => app.getStock(v.id, locationId) > 0);
       if (!hasStock) continue;
-      if (groups.some((g) => g.productId === productId)) continue;
-      groups.push(buildGroupFromCatalogProduct(productId, variants, locationId));
+      const first = variants[0];
+      const rawName = first?.products?.name || first?.sku || 'Shoe Model';
+      const { baseSku } = extractBaseSkuAndSize(rawName);
+      const cleanBase = (baseSku || rawName).toUpperCase();
+      if (groups.some((g) => g.name.toUpperCase() === cleanBase)) continue;
+      groups.push(buildGroupFromCatalogProduct(productId, variants, locationId, undefined, cleanBase));
       addedCount++;
     }
     if (addedCount > 0) {
@@ -667,8 +754,9 @@
 
   // ---------------- manual / unlisted model entry ----------------
   function openManualModal() {
-    manualName = query.trim().toUpperCase();
-    manualColour = 'Black';
+    const { baseSku } = extractBaseSkuAndSize(query.trim());
+    manualName = baseSku || query.trim().toUpperCase();
+    manualColour = 'All / Default';
     manualBrand = 'Generic';
     manualCategory = 'General';
     manualPrice = 0;
@@ -677,21 +765,21 @@
   }
 
   function saveManualModel() {
-    const cleanName = manualName.trim();
+    const cleanName = manualName.trim().toUpperCase();
     if (!cleanName) {
       app.toast('Please enter a Shoe Model Code or Name.', 'warning');
       return;
     }
-    const cleanCol = manualColour.trim() || 'Black';
+    const cleanCol = manualColour.trim() || 'All / Default';
     const pid = `custom_model_${Date.now()}`;
-    const gKey = `${pid}__${cleanCol}`;
+    const gKey = `${cleanName}__${cleanCol}`;
     const lines: CountedVariantLine[] = Object.entries(manualSizes).map(([sz, qty]) => ({
       variantId: `${gKey}_sz_${sz}`,
       productId: pid,
-      sku: `${cleanName}-${cleanCol.toUpperCase()}-${sz}`,
-      barcode: '',
+      sku: `${cleanName}${sz.padStart(2, '0')}`,
+      barcode: `${cleanName}${sz.padStart(2, '0')}`,
       size: sz,
-      displaySize: getShoeDisplaySize(sz, { name: cleanName, brand: manualBrand, category: manualCategory }),
+      displaySize: sz,
       colour: cleanCol,
       sellingPrice: Number(manualPrice) || 0,
       costPrice: 0,
@@ -718,10 +806,10 @@
     manualModalOpen = false;
     SoundFx.scan();
     persistNow();
-    app.toast(`Added "${cleanName}" [${cleanCol}] to Stock Sheet.`, 'success');
+    app.toast(`Added "${cleanName}" to Stock Sheet.`, 'success');
   }
 
-  // ---------------- custom size for a model ----------------
+  // ---------------- custom size (1..50) for a model ----------------
   function openCustomSizeModal(groupKey: string) {
     customSizeGroupKey = groupKey;
     customSizeInput = '';
@@ -732,12 +820,12 @@
     if (!customSizeGroupKey) return;
     const g = groups.find((x) => x.groupKey === customSizeGroupKey);
     if (!g) return;
-    const rawSz = customSizeInput.trim();
-    if (!rawSz) {
-      app.toast('Enter a size (e.g. 35, 46, 7, 8).', 'warning');
+    const rawSz = normalizeSizeKey(customSizeInput);
+    if (!rawSz || rawSz === '-') {
+      app.toast('Enter a valid size between 1 and 50 (e.g. 6, 8, 35, 46).', 'warning');
       return;
     }
-    const existing = g.lines.find((l) => l.size.toLowerCase() === rawSz.toLowerCase());
+    const existing = g.lines.find((l) => normalizeSizeKey(l.size) === rawSz);
     if (existing) {
       existing.countedQty = Math.max(0, existing.countedQty + (Number(customSizeQty) || 0));
     } else {
@@ -746,10 +834,10 @@
         {
           variantId: `custom_${g.groupKey}_${rawSz}_${Date.now()}`,
           productId: g.productId,
-          sku: `${g.name}-${rawSz}`,
-          barcode: '',
+          sku: `${g.name}${rawSz.padStart(2, '0')}`,
+          barcode: `${g.name}${rawSz.padStart(2, '0')}`,
           size: rawSz,
-          displaySize: getShoeDisplaySize(rawSz, { name: g.name, brand: g.brand, category: g.category, gender: g.gender }),
+          displaySize: rawSz,
           colour: g.colour,
           sellingPrice: g.sellingPrice,
           costPrice: g.costPrice,
@@ -791,7 +879,7 @@
       app.toast('Add at least one shoe model to export Excel.', 'warning');
       return;
     }
-    exportDetailedStockCountCSV(groups, locName, mode, sessionTitle, false);
+    exportDetailedStockCountCSV(groups, locName, mode, sessionTitle, true);
     app.toast('Detailed Excel (CSV) downloaded!', 'success');
   }
 
@@ -801,7 +889,7 @@
       return;
     }
     exportMatrixStockCountCSV(groups, locName, mode, sessionTitle);
-    app.toast('Size-Matrix Excel (CSV) downloaded!', 'success');
+    app.toast('Excel (Sizes 1–50, blank for zero stock) downloaded!', 'success');
   }
 
   function handlePrintSheet() {
@@ -917,10 +1005,10 @@
           </span>
         </div>
         <h1 class="mt-1 font-display text-lg font-bold tracking-tight text-fg sm:text-xl">
-          Shop Stock Count & Excel Sheet Builder
+          Shop Stock Count & Excel Sheet Builder (Sizes 1–50)
         </h1>
         <p class="mt-0.5 text-xs text-muted">
-          Scan barcodes, count multiple sizes & colours under the same code, and export to Excel (CSV).
+          Automatically splits Base SKU + Last 2 Digits as Size (`01–50`), merges repeat scans anywhere in the shop, and exports blank cells for zero stock.
         </p>
       </div>
 
@@ -1120,7 +1208,7 @@
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2">
         <ScanLine class="h-4 w-4 text-fg" />
-        <h2 class="text-sm font-semibold text-fg">Scan Barcode or Search Shoe Code</h2>
+        <h2 class="text-sm font-semibold text-fg">Scan Barcode (Last 2 Digits = Size) or Search Shoe Code</h2>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -1153,7 +1241,7 @@
           bind:this={searchInput}
           type="text"
           class="input h-11 pl-10 pr-24 font-mono text-sm"
-          placeholder="Scan barcode or type shoe code (e.g. SFW006, UB0622)..."
+          placeholder="Scan barcode (e.g. SL10538 -> SKU: SL105, Size: 38) or type code..."
           value={query}
           oninput={(e) => onSearchInput((e.currentTarget as HTMLInputElement).value)}
           onfocus={() => { if (query.trim()) showResults = true; }}
@@ -1173,10 +1261,16 @@
 
       <!-- Dropdown Results -->
       {#if showResults && debounced.trim().length >= 1}
+        {@const splitPreview = extractBaseSkuAndSize(debounced)}
         <div class="absolute left-0 right-0 z-30 mt-1.5 max-h-80 overflow-y-auto rounded-xl border border-line bg-surface shadow-2xl">
           {#if searchResults.length === 0}
             <div class="p-4 text-center">
-              <p class="text-xs text-muted">"{debounced}" is not in the system catalog yet.</p>
+              <p class="text-xs text-muted">
+                Code: <b class="font-mono text-fg">{splitPreview.baseSku}</b>
+                {#if splitPreview.size}
+                  • Detected Size: <b class="font-mono text-ok">Sz {splitPreview.size}</b>
+                {/if}
+              </p>
               <div class="mt-2.5 flex flex-wrap justify-center gap-2">
                 <button
                   type="button"
@@ -1186,11 +1280,13 @@
                     query = '';
                     debounced = '';
                     showResults = false;
-                    countUnlistedBarcode(code);
+                    processSmartScan(code, 1);
                   }}
                 >
                   <Plus class="h-3.5 w-3.5" />
-                  <span>Add "{debounced.toUpperCase()}" with Sizes 36–45</span>
+                  <span>
+                    Count "{splitPreview.baseSku}"{splitPreview.size ? ` (Sz ${splitPreview.size}) +1` : ' (Sizes 36–45)'}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1205,7 +1301,7 @@
           {:else}
             <div class="divide-y divide-line">
               {#each searchResults as hit}
-                {@const alreadyInSheet = groups.some((g) => g.productId === hit.productId)}
+                {@const alreadyInSheet = groups.some((g) => g.name.toUpperCase() === hit.name.toUpperCase())}
                 <button
                   type="button"
                   class="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-raised"
@@ -1221,10 +1317,9 @@
                       {/if}
                     </div>
                     <div class="mt-0.5 text-xs text-muted">
-                      {hit.variants.length} sizes available • {fmtMoney(hit.sellingPrice)}
-                      {#if hit.matchedVariant}
-                        • Matched SKU: <span class="font-mono font-semibold text-fg">{hit.matchedVariant.sku}</span>
-                        (Sz {getShoeDisplaySize(hit.matchedVariant.size, hit.matchedVariant.products)})
+                      {hit.variants.length} sizes • {fmtMoney(hit.sellingPrice)}
+                      {#if hit.matchedSize}
+                        • Scanned Size: <span class="font-mono font-bold text-ok">Sz {hit.matchedSize}</span>
                       {/if}
                     </div>
                   </div>
@@ -1240,12 +1335,12 @@
       {/if}
     </div>
 
-    <!-- ACTIVE DESIGN QUICK 1-TAP SIZE & COLOUR BAR (Solves scanning multiple shoes of same code with different sizes/colours!) -->
+    <!-- ACTIVE DESIGN QUICK 1-TAP SIZE & COLOUR BAR -->
     {#if activeGroup}
       <div class="mt-3.5 rounded-xl border border-fg/30 bg-raised/60 p-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded bg-fg px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-bg">Active Design</span>
+            <span class="rounded bg-fg px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-bg">Active SKU</span>
             <span class="font-display text-sm font-bold text-fg">{activeGroup.name}</span>
 
             <!-- Colour Selector for Active Design -->
@@ -1276,7 +1371,7 @@
           </div>
 
           <span class="text-[11px] text-muted">
-            Tap any size below to add <b>+1 pair</b> to <b>{activeGroup.name} ({activeGroup.colour})</b>:
+            Tap any size below to add <b>+1 pair</b> to <b>{activeGroup.name}</b>:
           </span>
         </div>
 
@@ -1285,7 +1380,7 @@
           {#each activeGroup.lines as ln (ln.variantId)}
             <button
               type="button"
-              class="flex min-w-[60px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border px-2 py-1.5 transition active:scale-95
+              class="flex min-w-[58px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border px-2 py-1.5 transition active:scale-95
                 {ln.countedQty > 0
                   ? 'border-fg bg-fg text-bg shadow-xs'
                   : 'border-line bg-surface text-fg hover:border-fg/50'}"
@@ -1294,7 +1389,7 @@
                 flashVariant(activeGroup.groupKey, ln.variantId);
               }}
             >
-              <span class="font-mono text-[11px] font-semibold opacity-80">Sz {ln.displaySize}</span>
+              <span class="font-mono text-[11px] font-semibold opacity-80">Sz {ln.size}</span>
               <span class="font-mono text-sm font-extrabold">{ln.countedQty}</span>
             </button>
           {/each}
@@ -1304,7 +1399,7 @@
             onclick={() => openCustomSizeModal(activeGroup.groupKey)}
           >
             <Plus class="h-3.5 w-3.5" />
-            <span class="text-[10px]">+ Size</span>
+            <span class="text-[10px]">+ Size (1–50)</span>
           </button>
         </div>
       </div>
@@ -1316,10 +1411,10 @@
     <div class="flex flex-col gap-3 border-b border-line pb-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <h2 class="text-sm font-semibold text-fg">
-          3. Counted Stock Sheet ({groups.length} {groups.length === 1 ? 'Entry' : 'Entries'})
+          3. Counted Stock Sheet ({groups.length} {groups.length === 1 ? 'Model Row' : 'Model Rows'})
         </h2>
         <p class="text-xs text-muted">
-          Each Model + Colour has its own row. Download as an Excel CSV sheet at any time or update system stock.
+          Excel Matrix exports Sizes 1–50 with blank cells (never 0) for uncounted sizes.
         </p>
       </div>
 
@@ -1329,10 +1424,10 @@
           class="btn btn-primary btn-sm"
           onclick={handleExportMatrixCSV}
           disabled={groups.length === 0}
-          title="Download Horizontal Size-Matrix Excel CSV (Model | Colour | Sizes 36-45)"
+          title="Download Horizontal Size-Matrix Excel CSV (Sizes 1 to 50 as columns, empty cells for zero stock)"
         >
           <Table class="h-3.5 w-3.5" />
-          <span>Excel (Size Matrix)</span>
+          <span>Excel (Sizes 1–50 Matrix)</span>
         </button>
 
         <button
@@ -1340,7 +1435,7 @@
           class="btn btn-sm font-semibold"
           onclick={handleExportDetailedCSV}
           disabled={groups.length === 0}
-          title="Download Detailed SKU/Barcode Excel CSV (One row per size & colour)"
+          title="Download Detailed SKU/Barcode Excel CSV"
         >
           <FileSpreadsheet class="h-3.5 w-3.5" />
           <span>Excel (Detailed SKU)</span>
@@ -1419,7 +1514,7 @@
         </div>
         <h3 class="mt-3 text-sm font-semibold text-fg">Your Shop Stock Count Sheet is Empty</h3>
         <p class="mt-1 max-w-md text-xs text-muted">
-          Scan a shoe barcode above, search a model code (like <span class="font-mono text-fg">SFW006</span>), load existing shop stock, or add a new unlisted model.
+          Scan a shoe barcode above (last 2 digits automatically set the size), search a model code, or load existing shop stock.
         </p>
         <div class="mt-4 flex flex-wrap justify-center gap-2">
           <button type="button" class="btn btn-primary btn-sm" onclick={() => searchInput?.focus()}>
@@ -1462,8 +1557,8 @@
                       type="text"
                       class="h-7 rounded border border-line bg-bg px-2 font-display text-sm font-bold text-fg focus:border-fg focus:outline-none"
                       bind:value={g.name}
-                      placeholder="Model Name / Barcode"
-                      title="Edit unlisted model name or code"
+                      placeholder="Base Model SKU"
+                      title="Edit base model SKU"
                     />
                   {:else}
                     <span class="font-display text-base font-bold text-fg">{g.name}</span>
@@ -1553,7 +1648,7 @@
                   type="button"
                   class="btn btn-sm text-[11px]"
                   onclick={(e) => { e.stopPropagation(); openCustomSizeModal(g.groupKey); }}
-                  title="Add another size to this shoe model"
+                  title="Add another size (1 to 50) to this shoe model"
                 >
                   <Plus class="h-3 w-3" />
                   <span>+ Size</span>
@@ -1599,14 +1694,14 @@
                           class="h-5 w-12 rounded border border-line bg-bg px-1 text-center font-mono text-xs font-bold text-fg focus:border-fg focus:outline-none"
                           bind:value={line.size}
                           oninput={() => {
-                            line.displaySize = line.size.trim() || '-';
+                            line.displaySize = normalizeSizeKey(line.size);
                           }}
-                          placeholder="Size"
-                          title="Type size (e.g. 40, 41)"
+                          placeholder="1-50"
+                          title="Size (1 to 50)"
                         />
                       </div>
                     {:else}
-                      <span class="font-mono text-xs font-bold text-fg">Sz {line.displaySize}</span>
+                      <span class="font-mono text-xs font-bold text-fg">Sz {line.size}</span>
                     {/if}
                     <span class="font-mono text-[10px] text-dim" title="Current system stock">
                       Sys: {line.systemStock}
@@ -1619,7 +1714,7 @@
                       type="button"
                       class="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border border-line bg-raised text-fg hover:bg-line active:scale-95"
                       onclick={() => (line.countedQty = Math.max(0, (Number(line.countedQty) || 0) - 1))}
-                      aria-label="Decrease size {line.displaySize}"
+                      aria-label="Decrease size {line.size}"
                     >
                       <Minus class="h-3.5 w-3.5" />
                     </button>
@@ -1634,7 +1729,7 @@
                       type="button"
                       class="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border border-line bg-raised text-fg hover:bg-line active:scale-95"
                       onclick={() => (line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1))}
-                      aria-label="Increase size {line.displaySize}"
+                      aria-label="Increase size {line.size}"
                     >
                       <Plus class="h-3.5 w-3.5" />
                     </button>
@@ -1762,7 +1857,7 @@
                   type="button"
                   class="btn btn-sm text-[11px]"
                   onclick={() => exportMatrixStockCountCSV(s.groups, s.locationName, s.mode, s.title)}
-                  title="Download Matrix Excel"
+                  title="Download Matrix Excel (Sizes 1-50)"
                 >
                   <Download class="h-3.5 w-3.5" />
                   <span>Excel</span>
@@ -1861,19 +1956,21 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
     <div class="card w-full max-w-sm p-5">
       <div class="flex items-center justify-between border-b border-line pb-3">
-        <h3 class="text-sm font-bold text-fg">Add Size to {targetGrp?.name} ({targetGrp?.colour})</h3>
+        <h3 class="text-sm font-bold text-fg">Add Size (1–50) to {targetGrp?.name}</h3>
         <button class="btn btn-ghost btn-sm" onclick={() => (customSizeGroupKey = null)}>
           <X class="h-4 w-4" />
         </button>
       </div>
       <div class="mt-4 space-y-3">
         <div>
-          <label class="label" for="customSzInput">Shoe Size (EU or UK)</label>
+          <label class="label" for="customSzInput">Shoe Size (1 to 50)</label>
           <input
             id="customSzInput"
-            type="text"
+            type="number"
+            min="1"
+            max="50"
             class="input font-mono"
-            placeholder="e.g. 35, 46, 47"
+            placeholder="e.g. 6, 8, 28, 35, 46"
             bind:value={customSizeInput}
           />
         </div>
