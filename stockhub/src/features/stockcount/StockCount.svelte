@@ -278,6 +278,135 @@
     showResults = false;
   }
 
+  function flashVariant(pid: string, vid: string) {
+    activeProductId = pid;
+    lastScannedVariantId = vid;
+    SoundFx.scan();
+    setTimeout(() => {
+      if (lastScannedVariantId === vid) lastScannedVariantId = null;
+    }, 1200);
+  }
+
+  /**
+   * Checks if a scanned barcode/SKU already exists in our current Stock Count Sheet (including unlisted items).
+   * If found, increments its countedQty by +1 and moves its group to the top.
+   */
+  function tryIncrementExistingInSheet(q: string): boolean {
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const line = g.lines.find(
+        (l) =>
+          (l.barcode && l.barcode.toUpperCase() === q) ||
+          (l.sku && l.sku.toUpperCase() === q),
+      );
+      if (line) {
+        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
+        line.lastScannedAt = Date.now();
+        if (i > 0) {
+          groups.splice(i, 1);
+          groups.unshift(g);
+        }
+        flashVariant(g.productId, line.variantId);
+        app.toast(
+          `+1 Counted: ${g.name}${line.displaySize && line.displaySize !== '-' ? ' • Sz ' + line.displaySize : ''} (Total: ${line.countedQty})`,
+          'success',
+        );
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Automatically adds or increments a barcode/code that is NOT in the system catalog.
+   */
+  function countUnlistedBarcode(rawCode: string) {
+    const q = rawCode.trim().toUpperCase();
+    if (!q) return;
+
+    // 1. If already scanned in sheet, increment +1
+    if (tryIncrementExistingInSheet(q)) return;
+
+    // 2. Check if barcode has a pattern like MODEL-41 or MODEL_42
+    const szMatch = q.match(/^(.+?)[-_\/](\d{1,2}(?:\.5)?)$/);
+    const modelName = szMatch ? szMatch[1].trim() : q;
+    const detectedSize = szMatch ? szMatch[2] : '-';
+
+    // Check if an unlisted group with this modelName already exists
+    const existingGrpIdx = groups.findIndex(
+      (g) => g.isCustomModel && g.name.toUpperCase() === modelName,
+    );
+
+    if (existingGrpIdx !== -1) {
+      const grp = groups[existingGrpIdx];
+      let line = grp.lines.find((l) => l.size.toUpperCase() === detectedSize || l.barcode.toUpperCase() === q);
+      if (line) {
+        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
+      } else {
+        const newVid = `unlisted_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const newLine: CountedVariantLine = {
+          variantId: newVid,
+          productId: grp.productId,
+          sku: q,
+          barcode: q,
+          size: detectedSize,
+          displaySize: detectedSize === '-' ? '-' : getShoeDisplaySize(detectedSize, { name: grp.name }),
+          colour: '',
+          sellingPrice: grp.sellingPrice,
+          costPrice: 0,
+          systemStock: 0,
+          countedQty: 1,
+          isCustom: true,
+          lastScannedAt: Date.now(),
+        };
+        grp.lines = sortLinesBySize([...grp.lines, newLine]);
+        line = newLine;
+      }
+      if (existingGrpIdx > 0) {
+        groups.splice(existingGrpIdx, 1);
+        groups.unshift(grp);
+      }
+      flashVariant(grp.productId, line.variantId);
+      app.toast(`+1 Unlisted Barcode Counted: ${q} (Total: ${line.countedQty})`, 'success');
+      return;
+    }
+
+    // 3. Create a brand new Unlisted Scanned Group at top of sheet
+    const pid = `unlisted_grp_${Date.now()}`;
+    const vid = `unlisted_var_${Date.now()}`;
+    const newGroup: CountedModelGroup = {
+      productId: pid,
+      name: modelName,
+      brand: 'Unlisted',
+      category: 'Scanned Barcode',
+      gender: '',
+      sellingPrice: 0,
+      costPrice: 0,
+      isCustomModel: true,
+      lines: [
+        {
+          variantId: vid,
+          productId: pid,
+          sku: q,
+          barcode: q,
+          size: detectedSize,
+          displaySize: detectedSize === '-' ? '-' : getShoeDisplaySize(detectedSize, { name: modelName }),
+          colour: '',
+          sellingPrice: 0,
+          costPrice: 0,
+          systemStock: 0,
+          countedQty: 1,
+          isCustom: true,
+          lastScannedAt: Date.now(),
+        },
+      ],
+    };
+
+    groups.unshift(newGroup);
+    flashVariant(pid, vid);
+    app.toast(`New Barcode "${q}" added & counted (+1)!`, 'success');
+  }
+
   function handleSearchKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       showResults = false;
@@ -288,7 +417,15 @@
     if (!q) return;
     e.preventDefault();
 
-    // 1. Check exact barcode or SKU match across catalog
+    // 1. Check if this exact barcode/SKU is already in our sheet (e.g. previously scanned unlisted barcode)
+    if (tryIncrementExistingInSheet(q)) {
+      query = '';
+      debounced = '';
+      showResults = false;
+      return;
+    }
+
+    // 2. Check exact barcode or SKU match across system catalog
     const exactVar = app.catalog.find(
       (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
     );
@@ -304,18 +441,28 @@
       return;
     }
 
-    // 2. Otherwise pick top model hit
+    // 3. Check partial catalog model match
     const hits = searchModels(q);
     if (hits.length > 0) {
       selectModelFromSearch(hits[0]);
-    } else {
-      SoundFx.warning();
-      app.toast(`No catalog match for "${query}". Use "+ New / Unlisted Shoe" to add manually.`, 'warning');
+      return;
     }
+
+    // 4. Not in system catalog -> automatically count as Unlisted Barcode!
+    countUnlistedBarcode(q);
+    query = '';
+    debounced = '';
+    showResults = false;
   }
 
   function handleCameraScan(code: string) {
     const q = code.trim().toUpperCase();
+    if (!q) return;
+
+    // 1. Check if already in sheet
+    if (tryIncrementExistingInSheet(q)) return;
+
+    // 2. Check exact match in system catalog
     const exactVar = app.catalog.find(
       (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
     );
@@ -323,13 +470,9 @@
       scanOrAddVariant(exactVar, 1);
       return;
     }
-    const hits = searchModels(q);
-    if (hits.length > 0) {
-      selectModelFromSearch(hits[0]);
-    } else {
-      SoundFx.warning();
-      app.toast(`Barcode "${code}" not found in catalog.`, 'warning');
-    }
+
+    // 3. Automatically count as Unlisted Barcode!
+    countUnlistedBarcode(q);
   }
 
   // ---------------- bulk / helper actions ----------------
@@ -860,15 +1003,31 @@
         <div class="absolute left-0 right-0 z-30 mt-1.5 max-h-80 overflow-y-auto rounded-xl border border-line bg-surface shadow-2xl">
           {#if searchResults.length === 0}
             <div class="p-4 text-center">
-              <p class="text-xs text-muted">No shoe model found matching "{debounced}".</p>
-              <button
-                type="button"
-                class="btn btn-primary btn-sm mt-2.5"
-                onclick={() => { showResults = false; openManualModal(); }}
-              >
-                <PackagePlus class="h-3.5 w-3.5" />
-                <span>Add "{debounced.toUpperCase()}" as New / Unlisted Model</span>
-              </button>
+              <p class="text-xs text-muted">"{debounced}" is not in the system catalog yet.</p>
+              <div class="mt-2.5 flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  onclick={() => {
+                    const code = debounced;
+                    query = '';
+                    debounced = '';
+                    showResults = false;
+                    countUnlistedBarcode(code);
+                  }}
+                >
+                  <Plus class="h-3.5 w-3.5" />
+                  <span>Count Barcode "{debounced.toUpperCase()}" (+1)</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  onclick={() => { showResults = false; openManualModal(); }}
+                >
+                  <PackagePlus class="h-3.5 w-3.5" />
+                  <span>Add with All Sizes (36–45)</span>
+                </button>
+              </div>
             </div>
           {:else}
             <div class="divide-y divide-line">
@@ -1053,15 +1212,37 @@
             <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="font-display text-base font-bold text-fg">{g.name}</span>
-                  <span class="chip text-[10px]">{g.brand}</span>
-                  <span class="text-xs text-dim">{g.category}</span>
                   {#if g.isCustomModel}
+                    <input
+                      type="text"
+                      class="h-7 rounded border border-line bg-bg px-2 font-display text-sm font-bold text-fg focus:border-fg focus:outline-none"
+                      bind:value={g.name}
+                      placeholder="Model Name / Barcode"
+                      title="Edit unlisted model name or code"
+                    />
                     <span class="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-warn">
-                      Unlisted / Manual
+                      Unlisted Barcode
                     </span>
+                    <div class="inline-flex items-center gap-1 font-mono text-xs text-muted">
+                      <span>Rs.</span>
+                      <input
+                        type="number"
+                        min="0"
+                        class="h-7 w-24 rounded border border-line bg-bg px-1.5 font-mono text-xs font-semibold text-fg focus:border-fg focus:outline-none"
+                        bind:value={g.sellingPrice}
+                        oninput={() => {
+                          for (const ln of g.lines) ln.sellingPrice = Number(g.sellingPrice) || 0;
+                        }}
+                        placeholder="Price"
+                        title="Optional selling price for Excel report"
+                      />
+                    </div>
+                  {:else}
+                    <span class="font-display text-base font-bold text-fg">{g.name}</span>
+                    <span class="chip text-[10px]">{g.brand}</span>
+                    <span class="text-xs text-dim">{g.category}</span>
+                    <span class="font-mono text-xs font-semibold text-muted">{fmtMoney(g.sellingPrice)}</span>
                   {/if}
-                  <span class="font-mono text-xs font-semibold text-muted">{fmtMoney(g.sellingPrice)}</span>
                 </div>
                 <div class="mt-1 flex flex-wrap items-center gap-3 font-mono text-xs">
                   <span class="text-dim">System: <b class="text-muted">{modelSys} prs</b></span>
@@ -1131,7 +1312,23 @@
                         : 'border-line bg-surface/60'}"
                 >
                   <div class="flex items-center justify-between gap-1">
-                    <span class="font-mono text-xs font-bold text-fg">Sz {line.displaySize}</span>
+                    {#if line.isCustom}
+                      <div class="flex items-center gap-1">
+                        <span class="font-mono text-[11px] font-bold text-muted">Sz</span>
+                        <input
+                          type="text"
+                          class="h-5 w-12 rounded border border-line bg-bg px-1 text-center font-mono text-xs font-bold text-fg focus:border-fg focus:outline-none"
+                          bind:value={line.size}
+                          oninput={() => {
+                            line.displaySize = line.size.trim() || '-';
+                          }}
+                          placeholder="Size"
+                          title="Type size (e.g. 40, 41)"
+                        />
+                      </div>
+                    {:else}
+                      <span class="font-mono text-xs font-bold text-fg">Sz {line.displaySize}</span>
+                    {/if}
                     <span class="font-mono text-[10px] text-dim" title="Current system stock">
                       Sys: {line.systemStock}
                     </span>
