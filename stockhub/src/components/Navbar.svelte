@@ -2,10 +2,23 @@
   import { app, type HubTab } from '../lib/app.svelte';
   import {
     Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, ClipboardCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
-    Download, User, ChevronDown, Users, KeyRound, LogOut,
+    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone,
   } from 'lucide-svelte';
 
   let menuOpen = $state(false);
+  let iosInstallOpen = $state(false);
+
+  const isIos =
+    typeof navigator !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    ((window.navigator as any).standalone === true ||
+      window.matchMedia?.('(display-mode: standalone)').matches);
+
+  const canShowInstall = $derived(!isStandalone && (Boolean(app.deferredPwaPrompt) || isIos));
 
   const tabs: { id: HubTab; label: string; icon: any }[] = [
     { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
@@ -18,10 +31,15 @@
 
   async function install() {
     const p = app.deferredPwaPrompt;
-    if (!p) return;
-    p.prompt();
-    await p.userChoice;
-    app.deferredPwaPrompt = null;
+    if (p) {
+      p.prompt();
+      await p.userChoice;
+      app.deferredPwaPrompt = null;
+      return;
+    }
+    if (isIos) {
+      iosInstallOpen = true;
+    }
   }
   function openReset() {
     menuOpen = false;
@@ -117,10 +135,10 @@
         <RefreshCw class="h-3.5 w-3.5 shrink-0 text-dim {app.isSyncing ? 'animate-spin text-fg' : ''}" />
       </button>
 
-      {#if app.deferredPwaPrompt}
-        <button class="btn btn-sm hidden sm:inline-flex" onclick={install}>
+      {#if canShowInstall}
+        <button class="btn btn-sm inline-flex" onclick={install} title="Install FashionFeet Stock Hub App">
           <Download class="h-3.5 w-3.5" />
-          <span>Install</span>
+          <span class="hidden xs:inline sm:inline">Install</span>
         </button>
       {/if}
 
@@ -179,6 +197,16 @@
               </div>
             </div>
             <div class="p-1.5">
+              {#if canShowInstall}
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-fg hover:bg-raised"
+                  onclick={() => { menuOpen = false; install(); }}
+                >
+                  <Download class="h-3.5 w-3.5 text-muted" />
+                  <span>Install App on Phone</span>
+                </button>
+              {/if}
               <button
                 type="button"
                 class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-fg hover:bg-raised"
@@ -210,3 +238,52 @@
     </div>
   </div>
 </header>
+
+{#if iosInstallOpen}
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-xs sm:items-center sm:p-4">
+    <div class="card w-full max-w-md rounded-t-2xl p-5 sm:rounded-2xl">
+      <div class="flex items-center justify-between border-b border-line pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="grid h-9 w-9 place-items-center rounded-lg bg-fg text-bg">
+            <Smartphone class="h-5 w-5" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-fg">Install on iPhone / iPad</h3>
+            <p class="text-xs text-muted">Apple Safari requires 2 quick taps to install:</p>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick={() => (iosInstallOpen = false)}>
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-3 text-xs text-fg">
+        <div class="flex items-start gap-3 rounded-xl border border-line bg-raised p-3">
+          <div class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-fg font-mono text-xs font-bold text-bg">1</div>
+          <div>
+            <div class="font-semibold">Tap the Safari "Share" button</div>
+            <p class="mt-0.5 text-muted">
+              At the bottom of your iPhone Safari screen, tap the <b class="text-fg">Share</b> icon
+              (<Share class="inline h-3.5 w-3.5 text-fg" /> square with upward arrow).
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 rounded-xl border border-line bg-raised p-3">
+          <div class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-fg font-mono text-xs font-bold text-bg">2</div>
+          <div>
+            <div class="font-semibold">Select "Add to Home Screen"</div>
+            <p class="mt-0.5 text-muted">
+              Scroll down the menu and tap <b class="text-fg">Add to Home Screen</b>
+              (<PlusSquare class="inline h-3.5 w-3.5 text-fg" />), then tap <b class="text-fg">Add</b> in the top-right corner.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary w-full sm:w-auto" onclick={() => (iosInstallOpen = false)}>Got it</button>
+      </div>
+    </div>
+  </div>
+{/if}
