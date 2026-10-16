@@ -31,7 +31,11 @@ class AppStore {
   cart = $state<CartLine[]>([]);
 
   // --- ui ---
-  tab = $state<HubTab>('transfer');
+  tab = $state<HubTab>(
+    (['transfer', 'reorder', 'stockcount', 'history'].includes(localStorage.getItem('ff_hub_active_tab') || '')
+      ? (localStorage.getItem('ff_hub_active_tab') as HubTab)
+      : 'transfer'),
+  );
   theme = $state<'dark' | 'light'>((localStorage.getItem('ff_theme') as any) === 'light' ? 'light' : 'dark');
   soundEnabled = $state(true);
   autoScan = $state(true);

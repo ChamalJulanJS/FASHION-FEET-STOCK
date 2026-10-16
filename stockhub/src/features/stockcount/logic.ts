@@ -3,6 +3,25 @@ import type { Variant } from '../../lib/types';
 
 export type CountMode = 'audit' | 'add';
 
+export const COMMON_SHOE_COLOURS = [
+  'All / Default',
+  'Black',
+  'Brown',
+  'Tan',
+  'Dark Brown',
+  'White',
+  'Beige / Nude',
+  'Navy / Blue',
+  'Grey',
+  'Maroon / Red',
+  'Green',
+  'Gold',
+  'Silver',
+  'Multi',
+];
+
+export const STANDARD_SHOE_SIZES = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
+
 export interface CountedVariantLine {
   variantId: string; // Either real Supabase UUID or 'custom_...'
   productId: string;
@@ -20,8 +39,10 @@ export interface CountedVariantLine {
 }
 
 export interface CountedModelGroup {
+  groupKey: string; // Unique key per (productId + colour)
   productId: string;
   name: string;
+  colour: string;
   brand: string;
   category: string;
   gender: string;
@@ -40,14 +61,35 @@ export interface StockCountDraft {
   updatedAt: string;
 }
 
-const DRAFT_KEY = 'ff_stock_count_draft_v1';
+export interface SavedStockSnapshot {
+  id: string;
+  title: string;
+  locationId: string;
+  locationName: string;
+  mode: CountMode;
+  totalModels: number;
+  totalPairs: number;
+  savedAt: string;
+  groups: CountedModelGroup[];
+}
+
+const DRAFT_KEY = 'ff_stock_count_draft_v2';
+const LEGACY_DRAFT_KEY = 'ff_stock_count_draft_v1';
+const SNAPSHOTS_KEY = 'ff_stock_count_snapshots_v1';
 
 export function loadStockCountDraft(): StockCountDraft | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(DRAFT_KEY) || localStorage.getItem(LEGACY_DRAFT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.groups)) return parsed as StockCountDraft;
+    if (parsed && Array.isArray(parsed.groups)) {
+      // Ensure groupKey and colour exist on migrated v1 items
+      for (const g of parsed.groups) {
+        if (!g.colour) g.colour = 'All / Default';
+        if (!g.groupKey) g.groupKey = `${g.productId}__${g.colour}`;
+      }
+      return parsed as StockCountDraft;
+    }
   } catch (e) {
     console.warn('Failed to load stock count draft:', e);
   }
@@ -65,7 +107,41 @@ export function saveStockCountDraft(draft: StockCountDraft) {
 export function clearStockCountDraft() {
   try {
     localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(LEGACY_DRAFT_KEY);
   } catch {}
+}
+
+export function loadSavedSnapshots(): SavedStockSnapshot[] {
+  try {
+    const raw = localStorage.getItem(SNAPSHOTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSnapshotToStorage(snap: SavedStockSnapshot): SavedStockSnapshot[] {
+  try {
+    const list = loadSavedSnapshots().filter((s) => s.id !== snap.id);
+    list.unshift(snap);
+    const trimmed = list.slice(0, 25);
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(trimmed));
+    return trimmed;
+  } catch {
+    return [];
+  }
+}
+
+export function deleteSnapshotFromStorage(id: string): SavedStockSnapshot[] {
+  try {
+    const list = loadSavedSnapshots().filter((s) => s.id !== id);
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(list));
+    return list;
+  } catch {
+    return [];
+  }
 }
 
 export function sortLinesBySize<T extends { size?: string | null }>(lines: T[]): T[] {
@@ -83,9 +159,28 @@ export function sortLinesBySize<T extends { size?: string | null }>(lines: T[]):
   });
 }
 
-export function buildGroupFromCatalogProduct(productId: string, variants: Variant[], locationId: string): CountedModelGroup {
+export function buildGroupFromCatalogProduct(
+  productId: string,
+  variants: Variant[],
+  locationId: string,
+  colourOverride?: string,
+): CountedModelGroup {
   const first = variants[0];
-  const p = first?.products || { id: productId, name: first?.sku || 'Shoe Model', brand: 'Generic', category: 'General', gender: '' };
+  const p = first?.products || {
+    id: productId,
+    name: first?.sku || 'Shoe Model',
+    brand: 'Generic',
+    category: 'General',
+    gender: '',
+  };
+
+  // Detect default colour if variants have one
+  const detectedColour =
+    colourOverride ||
+    first?.colour?.trim() ||
+    'All / Default';
+
+  const groupKey = `${productId}__${detectedColour}`;
   const sorted = sortLinesBySize(variants);
   const lines: CountedVariantLine[] = sorted.map((v) => ({
     variantId: v.id,
@@ -94,7 +189,7 @@ export function buildGroupFromCatalogProduct(productId: string, variants: Varian
     barcode: v.barcode || '',
     size: (v.size || '').toString().trim() || '-',
     displaySize: getShoeDisplaySize(v.size, p),
-    colour: v.colour || '',
+    colour: detectedColour === 'All / Default' ? (v.colour || '') : detectedColour,
     sellingPrice: Number(v.selling_price) || 0,
     costPrice: Number(v.cost_price) || 0,
     systemStock: app.getStock(v.id, locationId),
@@ -103,8 +198,10 @@ export function buildGroupFromCatalogProduct(productId: string, variants: Varian
   }));
 
   return {
+    groupKey,
     productId,
     name: p.name || first?.sku || 'Shoe Model',
+    colour: detectedColour,
     brand: p.brand || 'Generic',
     category: p.category || 'General',
     gender: p.gender || '',
@@ -115,13 +212,53 @@ export function buildGroupFromCatalogProduct(productId: string, variants: Varian
   };
 }
 
+/**
+ * Clones an existing model group for a new Colour (e.g. Black -> Brown)
+ * with fresh 0 counted quantities across all sizes.
+ */
+export function cloneGroupForNewColour(source: CountedModelGroup, newColour: string): CountedModelGroup {
+  const cleanCol = newColour.trim() || 'Brown';
+  const suffixId = `${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+  const newGroupKey = `${source.productId}__${cleanCol}__${suffixId}`;
+
+  // Ensure standard sizes 36-45 exist if source only had a single '-' size
+  const baseLines =
+    source.lines.length <= 1 && source.lines[0]?.size === '-'
+      ? ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'].map((sz) => ({
+          variantId: `col_${newGroupKey}_${sz}`,
+          productId: source.productId,
+          sku: `${source.name}-${cleanCol.toUpperCase()}-${sz}`,
+          barcode: '',
+          size: sz,
+          displaySize: getShoeDisplaySize(sz, { name: source.name, brand: source.brand, category: source.category }),
+          colour: cleanCol,
+          sellingPrice: source.sellingPrice,
+          costPrice: source.costPrice,
+          systemStock: 0,
+          countedQty: 0,
+          isCustom: true,
+        }))
+      : source.lines.map((l) => ({
+          ...l,
+          variantId: source.isCustomModel ? `col_${newGroupKey}_${l.size}` : l.variantId,
+          colour: cleanCol,
+          countedQty: 0,
+        }));
+
+  return {
+    ...source,
+    groupKey: newGroupKey,
+    colour: cleanCol,
+    lines: sortLinesBySize(baseLines),
+  };
+}
+
 function csvCell(val: string | number | null | undefined): string {
   const s = (val ?? '').toString().replace(/"/g, '""');
   return `"${s}"`;
 }
 
 function triggerCsvDownload(csvContent: string, filename: string) {
-  // Include UTF-8 BOM so Microsoft Excel opens columns and characters properly
   const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -137,7 +274,6 @@ function triggerCsvDownload(csvContent: string, filename: string) {
 
 /**
  * 1. Detailed Row-per-Size/SKU Excel CSV Export
- * Ideal for POS import, database audit, or detailed line-by-line Excel filtering.
  */
 export function exportDetailedStockCountCSV(
   groups: CountedModelGroup[],
@@ -153,13 +289,13 @@ export function exportDetailedStockCountCSV(
     'Session / Note',
     'Mode',
     'Model Code / Name',
+    'Colour',
     'Brand',
     'Category',
     'SKU',
     'Barcode',
     'Size (UK/EU)',
     'Raw Size',
-    'Colour',
     'Cost Price (Rs)',
     'Selling Price (Rs)',
     'System Stock',
@@ -172,6 +308,7 @@ export function exportDetailedStockCountCSV(
   const rows: string[] = [headers.map(csvCell).join(',')];
 
   for (const g of groups) {
+    const colLabel = g.colour && g.colour !== 'All / Default' ? g.colour : '';
     for (const l of sortLinesBySize(g.lines)) {
       if (onlyNonZero && l.countedQty === 0 && l.systemStock === 0) continue;
       const finalStock = mode === 'audit' ? l.countedQty : l.systemStock + l.countedQty;
@@ -185,13 +322,13 @@ export function exportDetailedStockCountCSV(
           sessionTitle || 'Shop Stock Count',
           mode === 'audit' ? 'Physical Audit' : 'Stock In (+Add)',
           g.name,
+          colLabel || l.colour || '-',
           g.brand,
           g.category,
           l.sku,
           l.barcode,
           l.displaySize,
           l.size,
-          l.colour,
           (l.costPrice || g.costPrice || 0).toFixed(2),
           (l.sellingPrice || g.sellingPrice || 0).toFixed(2),
           l.systemStock,
@@ -211,8 +348,7 @@ export function exportDetailedStockCountCSV(
 }
 
 /**
- * 2. Shoe Size-Matrix Excel CSV Export (One row per Shoe Model, Sizes as columns)
- * Ideal for footwear shop spreadsheets where each model row shows quantities across sizes.
+ * 2. Shoe Size-Matrix Excel CSV Export (One row per Model + Colour, Sizes as columns)
  */
 export function exportMatrixStockCountCSV(
   groups: CountedModelGroup[],
@@ -222,7 +358,6 @@ export function exportMatrixStockCountCSV(
 ) {
   const dateStr = new Date().toISOString().slice(0, 10);
 
-  // Collect all unique raw sizes present across counted groups, sorted naturally
   const sizeSet = new Set<string>();
   for (const g of groups) {
     for (const l of g.lines) {
@@ -233,13 +368,15 @@ export function exportMatrixStockCountCSV(
   }
   const allSizes = sortLinesBySize(Array.from(sizeSet).map((s) => ({ size: s }))).map((x) => x.size);
   if (allSizes.length === 0) {
-    ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'].forEach((s) => allSizes.push(s));
+    ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'].forEach((s) => sizeSet.add(s));
+    allSizes.push('36', '37', '38', '39', '40', '41', '42', '43', '44', '45');
   }
 
   const headers = [
     'Shop / Branch',
     'Date',
     'Model Code / Name',
+    'Colour',
     'Brand',
     'Category',
     'Selling Price (Rs)',
@@ -257,6 +394,7 @@ export function exportMatrixStockCountCSV(
     const modelSys = g.lines.reduce((s, l) => s + l.systemStock, 0);
     if (modelCounted === 0 && modelSys === 0) continue;
 
+    const colLabel = g.colour && g.colour !== 'All / Default' ? g.colour : '-';
     const sizeCells = allSizes.map((sz) => {
       const matching = g.lines.filter((l) => (l.size || '-').trim() === sz);
       const sum = matching.reduce((s, l) => s + l.countedQty, 0);
@@ -271,6 +409,7 @@ export function exportMatrixStockCountCSV(
         locationName,
         dateStr,
         g.name,
+        colLabel,
         g.brand,
         g.category,
         (g.sellingPrice || 0).toFixed(2),
@@ -330,6 +469,7 @@ export function buildStockCountWhatsApp(
     totalCounted += gCnt;
     totalValue += gVal;
 
+    const colTag = g.colour && g.colour !== 'All / Default' ? ` [${g.colour}]` : '';
     const sizeBreakdown = activeLines
       .filter((l) => l.countedQty > 0)
       .map((l) => `Sz ${l.displaySize}: *${l.countedQty}*`)
@@ -337,7 +477,7 @@ export function buildStockCountWhatsApp(
 
     const diff = gCnt - gSys;
     const diffTag = mode === 'audit' ? ` (Sys: ${gSys}, Diff: ${diff >= 0 ? '+' + diff : diff})` : '';
-    linesOut.push(`• *${g.name}* (${g.brand}) — *${gCnt} prs*${diffTag}`);
+    linesOut.push(`• *${g.name}*${colTag} (${g.brand}) — *${gCnt} prs*${diffTag}`);
     if (sizeBreakdown) linesOut.push(`   ${sizeBreakdown}`);
   }
 
@@ -383,6 +523,7 @@ export function printStockCountSheet(
     totalCounted += gCnt;
     totalValue += gVal;
     const diff = mode === 'audit' ? gCnt - gSys : gCnt;
+    const colLabel = g.colour && g.colour !== 'All / Default' ? ` • Colour: <b>${g.colour}</b>` : '';
 
     const sizesHtml = sortLinesBySize(g.lines)
       .filter((l) => l.countedQty > 0 || l.systemStock > 0)
@@ -404,7 +545,7 @@ export function printStockCountSheet(
       <tr>
         <td style="padding:8px;border-bottom:1px solid #e4e4e7;font-weight:700;">
           ${g.name}
-          <div style="font-size:11px;font-weight:400;color:#71717a;">${g.brand} • ${g.category} • ${fmtMoney(g.sellingPrice)}</div>
+          <div style="font-size:11px;font-weight:400;color:#71717a;">${g.brand} • ${g.category}${colLabel} • ${fmtMoney(g.sellingPrice)}</div>
         </td>
         <td style="padding:8px;border-bottom:1px solid #e4e4e7;">${sizesHtml || '-'}</td>
         <td style="padding:8px;border-bottom:1px solid #e4e4e7;text-align:right;font-family:monospace;">${gSys}</td>
@@ -462,7 +603,7 @@ export function printStockCountSheet(
   <table>
     <thead>
       <tr>
-        <th>Shoe Model</th>
+        <th>Shoe Model & Colour</th>
         <th>Size Breakdown</th>
         <th style="text-align:right;">System</th>
         <th style="text-align:right;">Counted</th>

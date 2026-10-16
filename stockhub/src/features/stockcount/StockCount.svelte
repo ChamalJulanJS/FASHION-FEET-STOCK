@@ -2,23 +2,29 @@
   import { onMount } from 'svelte';
   import {
     ClipboardCheck, Store, Building2, ChevronDown, Check, Search, ScanLine, Camera, Zap, Plus, Minus,
-    Trash2, FileSpreadsheet, Table, Printer, MessageCircle, Database, RotateCcw, Sparkles, PackagePlus,
-    X, CheckCircle2, AlertTriangle, Loader2, Copy, Layers, ArrowUpDown,
+    Trash2, FileSpreadsheet, Table, Printer, MessageCircle, Database, RotateCcw, PackagePlus,
+    X, CheckCircle2, Loader2, Copy, Layers, Palette, BookmarkCheck, FolderClock, Download,
   } from 'lucide-svelte';
   import { app, getShoeDisplaySize, fmtMoney } from '../../lib/app.svelte';
   import { restGet, restWrite } from '../../lib/api';
   import { SoundFx } from '../../lib/sound';
-  import type { Variant, Location } from '../../lib/types';
+  import type { Variant } from '../../lib/types';
   import CameraScanner from '../transfer/CameraScanner.svelte';
   import {
     type CountMode,
     type CountedModelGroup,
     type CountedVariantLine,
+    type SavedStockSnapshot,
+    COMMON_SHOE_COLOURS,
     loadStockCountDraft,
     saveStockCountDraft,
     clearStockCountDraft,
+    loadSavedSnapshots,
+    saveSnapshotToStorage,
+    deleteSnapshotFromStorage,
     sortLinesBySize,
     buildGroupFromCatalogProduct,
+    cloneGroupForNewColour,
     exportDetailedStockCountCSV,
     exportMatrixStockCountCSV,
     buildStockCountWhatsApp,
@@ -31,6 +37,8 @@
   let sessionTitle = $state('');
   let notes = $state('');
   let groups = $state<CountedModelGroup[]>([]);
+  let snapshots = $state<SavedStockSnapshot[]>([]);
+  let lastSavedTime = $state('');
 
   // UI controls
   let locDropdownOpen = $state(false);
@@ -40,12 +48,20 @@
   let cameraOpen = $state(false);
   let sheetFilter = $state<'ALL' | 'COUNTED' | 'VARIANCE' | 'MATCHED'>('ALL');
   let sheetSearch = $state('');
-  let activeProductId = $state<string | null>(null);
+  let activeGroupKey = $state<string | null>(null);
   let lastScannedVariantId = $state<string | null>(null);
+
+  // Colour picker modal for adding a new colour variant of a model
+  let colourModalGroupKey = $state<string | null>(null);
+  let customColourText = $state('');
+
+  // Saved snapshots drawer/modal
+  let snapshotsModalOpen = $state(false);
 
   // Manual / unlisted model modal
   let manualModalOpen = $state(false);
   let manualName = $state('');
+  let manualColour = $state('Black');
   let manualBrand = $state('Generic');
   let manualCategory = $state('General');
   let manualPrice = $state<number>(0);
@@ -54,7 +70,7 @@
   });
 
   // Custom size modal for an existing model group
-  let customSizeGroupIdx = $state<number | null>(null);
+  let customSizeGroupKey = $state<string | null>(null);
   let customSizeInput = $state('');
   let customSizeQty = $state(1);
 
@@ -66,8 +82,23 @@
   let debounceTimer: ReturnType<typeof setTimeout>;
   let draftLoaded = $state(false);
 
+  function persistNow() {
+    if (!draftLoaded) return;
+    const now = new Date();
+    saveStockCountDraft({
+      locationId,
+      mode,
+      sessionTitle,
+      notes,
+      groups,
+      updatedAt: now.toISOString(),
+    });
+    lastSavedTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
   // ---------------- lifecycle & persistence ----------------
   onMount(() => {
+    snapshots = loadSavedSnapshots();
     const saved = loadStockCountDraft();
     if (saved) {
       locationId = saved.locationId || app.fromId || app.locations[0]?.id || '';
@@ -75,20 +106,23 @@
       sessionTitle = saved.sessionTitle || '';
       notes = saved.notes || '';
       groups = saved.groups || [];
+      if (groups.length > 0) activeGroupKey = groups[0].groupKey;
+      lastSavedTime = new Date(saved.updatedAt || Date.now()).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     } else {
       locationId = app.fromId || app.locations[0]?.id || '';
     }
     draftLoaded = true;
   });
 
-  // Ensure locationId defaults once locations load
   $effect(() => {
     if (!locationId && app.locations.length > 0) {
       locationId = app.fromId || app.locations[0].id;
     }
   });
 
-  // Refresh systemStock values whenever locationId or app.syncVersion changes
   $effect(() => {
     const loc = locationId;
     const _ver = app.syncVersion;
@@ -103,22 +137,21 @@
     }
   });
 
-  // Auto-save draft on any change
+  // Deep reactive auto-save whenever anything in groups/settings changes
   $effect(() => {
     if (!draftLoaded) return;
-    saveStockCountDraft({
-      locationId,
-      mode,
-      sessionTitle,
-      notes,
-      groups,
-      updatedAt: new Date().toISOString(),
-    });
+    // Touch deep fields so Svelte 5 tracks every nested edit
+    const _touch = groups.map((g) => `${g.name}_${g.colour}_${g.sellingPrice}_${g.lines.map((l) => `${l.size}:${l.countedQty}`).join(',')}`).join('|');
+    const _meta = `${locationId}_${mode}_${sessionTitle}_${notes}`;
+    void _touch;
+    void _meta;
+    persistNow();
   });
 
   // ---------------- derived stats ----------------
   const selectedLoc = $derived(app.locations.find((l) => l.id === locationId));
   const locName = $derived(selectedLoc?.name || 'Select Shop');
+  const activeGroup = $derived(groups.find((g) => g.groupKey === activeGroupKey) || groups[0] || null);
 
   const stats = $derived.by(() => {
     let modelsCount = groups.length;
@@ -177,7 +210,7 @@
       );
       const partialVariant = variants.find(
         (v) =>
-          (v.barcode && v.barcode.toUpperCase().includes(q)) ||
+          (v.barcode && v.barcode.toUpperCase() === q) ||
           (v.sku && v.sku.toUpperCase().includes(q)),
       );
       const nameMatch = name.toUpperCase().includes(q);
@@ -230,11 +263,33 @@
     }, 80);
   }
 
+  function flashVariant(gKey: string, vid: string) {
+    activeGroupKey = gKey;
+    lastScannedVariantId = vid;
+    SoundFx.scan();
+    persistNow();
+    setTimeout(() => {
+      if (lastScannedVariantId === vid) lastScannedVariantId = null;
+    }, 1200);
+  }
+
   function ensureModelGroup(productId: string, variants: Variant[]): CountedModelGroup {
+    // Prefer currently active group if it belongs to the same productId (e.g. when user switched to Brown colour of this model)
+    if (activeGroupKey) {
+      const activeIdx = groups.findIndex((g) => g.groupKey === activeGroupKey && g.productId === productId);
+      if (activeIdx !== -1) {
+        const grp = groups[activeIdx];
+        if (activeIdx > 0) {
+          groups.splice(activeIdx, 1);
+          groups.unshift(grp);
+        }
+        return groups[0];
+      }
+    }
+
     const existingIdx = groups.findIndex((g) => g.productId === productId);
     if (existingIdx !== -1) {
       const grp = groups[existingIdx];
-      // Move to top of sheet so user immediately sees it
       if (existingIdx > 0) {
         groups.splice(existingIdx, 1);
         groups.unshift(grp);
@@ -250,50 +305,39 @@
     const pid = v.product_id || v.products?.id || v.id;
     const allVars = app.productsMap.get(pid) || [v];
     const group = ensureModelGroup(pid, allVars);
-    const line = group.lines.find((l) => l.variantId === v.id);
+    const line = group.lines.find((l) => l.variantId === v.id || l.size === (v.size || '').trim());
     if (line) {
       line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + incrementQty);
       line.lastScannedAt = Date.now();
+      flashVariant(group.groupKey, line.variantId);
+    } else {
+      flashVariant(group.groupKey, v.id);
     }
-    activeProductId = pid;
-    lastScannedVariantId = v.id;
-    SoundFx.scan();
-    setTimeout(() => {
-      if (lastScannedVariantId === v.id) lastScannedVariantId = null;
-    }, 1200);
   }
 
   function selectModelFromSearch(hit: ModelSearchHit) {
     const group = ensureModelGroup(hit.productId, hit.variants);
-    activeProductId = group.productId;
+    activeGroupKey = group.groupKey;
     if (hit.matchedVariant && app.autoScan) {
       scanOrAddVariant(hit.matchedVariant, 1);
       app.toast(`+1 Counted: ${hit.name} (Sz ${getShoeDisplaySize(hit.matchedVariant.size, hit.matchedVariant.products)})`, 'success');
     } else {
       SoundFx.scan();
-      app.toast(`Added ${hit.name} (${group.lines.length} sizes) to Stock Sheet`, 'info');
+      persistNow();
+      app.toast(`Selected ${hit.name} — Tap sizes (36–45) or Colour below!`, 'info');
     }
     query = '';
     debounced = '';
     showResults = false;
   }
 
-  function flashVariant(pid: string, vid: string) {
-    activeProductId = pid;
-    lastScannedVariantId = vid;
-    SoundFx.scan();
-    setTimeout(() => {
-      if (lastScannedVariantId === vid) lastScannedVariantId = null;
-    }, 1200);
-  }
-
-  /**
-   * Checks if a scanned barcode/SKU already exists in our current Stock Count Sheet (including unlisted items).
-   * If found, increments its countedQty by +1 and moves its group to the top.
-   */
   function tryIncrementExistingInSheet(q: string): boolean {
-    for (let i = 0; i < groups.length; i++) {
-      const g = groups[i];
+    // Check active group first (in case multiple colours of same code exist)
+    const ordered = activeGroupKey
+      ? [...groups].sort((a, b) => (a.groupKey === activeGroupKey ? -1 : b.groupKey === activeGroupKey ? 1 : 0))
+      : groups;
+
+    for (const g of ordered) {
       const line = g.lines.find(
         (l) =>
           (l.barcode && l.barcode.toUpperCase() === q) ||
@@ -302,13 +346,15 @@
       if (line) {
         line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
         line.lastScannedAt = Date.now();
-        if (i > 0) {
-          groups.splice(i, 1);
+        const realIdx = groups.findIndex((x) => x.groupKey === g.groupKey);
+        if (realIdx > 0) {
+          groups.splice(realIdx, 1);
           groups.unshift(g);
         }
-        flashVariant(g.productId, line.variantId);
+        flashVariant(g.groupKey, line.variantId);
+        const colTag = g.colour && g.colour !== 'All / Default' ? ` [${g.colour}]` : '';
         app.toast(
-          `+1 Counted: ${g.name}${line.displaySize && line.displaySize !== '-' ? ' • Sz ' + line.displaySize : ''} (Total: ${line.countedQty})`,
+          `+1 Counted: ${g.name}${colTag} • Sz ${line.displaySize} (Total: ${line.countedQty})`,
           'success',
         );
         return true;
@@ -319,92 +365,113 @@
 
   /**
    * Automatically adds or increments a barcode/code that is NOT in the system catalog.
+   * Creates full 36-45 size matrix so scanning multiple shoes of the same design/code is effortless!
    */
   function countUnlistedBarcode(rawCode: string) {
     const q = rawCode.trim().toUpperCase();
     if (!q) return;
 
-    // 1. If already scanned in sheet, increment +1
     if (tryIncrementExistingInSheet(q)) return;
 
-    // 2. Check if barcode has a pattern like MODEL-41 or MODEL_42
+    // Check if barcode has a trailing size like MODEL-41 or MODEL_42
     const szMatch = q.match(/^(.+?)[-_\/](\d{1,2}(?:\.5)?)$/);
     const modelName = szMatch ? szMatch[1].trim() : q;
-    const detectedSize = szMatch ? szMatch[2] : '-';
+    const detectedSize = szMatch ? szMatch[2] : null;
 
-    // Check if an unlisted group with this modelName already exists
-    const existingGrpIdx = groups.findIndex(
-      (g) => g.isCustomModel && g.name.toUpperCase() === modelName,
+    // Check if an unlisted group with this modelName already exists (preferring activeGroupKey if matching)
+    let existingGrpIdx = groups.findIndex(
+      (g) => g.groupKey === activeGroupKey && g.name.toUpperCase() === modelName,
     );
+    if (existingGrpIdx === -1) {
+      existingGrpIdx = groups.findIndex((g) => g.name.toUpperCase() === modelName);
+    }
 
     if (existingGrpIdx !== -1) {
       const grp = groups[existingGrpIdx];
-      let line = grp.lines.find((l) => l.size.toUpperCase() === detectedSize || l.barcode.toUpperCase() === q);
-      if (line) {
-        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
-      } else {
-        const newVid = `unlisted_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const newLine: CountedVariantLine = {
-          variantId: newVid,
-          productId: grp.productId,
-          sku: q,
-          barcode: q,
-          size: detectedSize,
-          displaySize: detectedSize === '-' ? '-' : getShoeDisplaySize(detectedSize, { name: grp.name }),
-          colour: '',
-          sellingPrice: grp.sellingPrice,
-          costPrice: 0,
-          systemStock: 0,
-          countedQty: 1,
-          isCustom: true,
-          lastScannedAt: Date.now(),
-        };
-        grp.lines = sortLinesBySize([...grp.lines, newLine]);
-        line = newLine;
-      }
       if (existingGrpIdx > 0) {
         groups.splice(existingGrpIdx, 1);
         groups.unshift(grp);
       }
-      flashVariant(grp.productId, line.variantId);
-      app.toast(`+1 Unlisted Barcode Counted: ${q} (Total: ${line.countedQty})`, 'success');
+      if (detectedSize) {
+        let line = grp.lines.find((l) => l.size.toUpperCase() === detectedSize);
+        if (!line) {
+          const newVid = `unlisted_${Date.now()}_${detectedSize}`;
+          line = {
+            variantId: newVid,
+            productId: grp.productId,
+            sku: `${modelName}-${detectedSize}`,
+            barcode: q,
+            size: detectedSize,
+            displaySize: getShoeDisplaySize(detectedSize, { name: grp.name }),
+            colour: grp.colour,
+            sellingPrice: grp.sellingPrice,
+            costPrice: 0,
+            systemStock: 0,
+            countedQty: 0,
+            isCustom: true,
+          };
+          grp.lines = sortLinesBySize([...grp.lines, line]);
+        }
+        line.countedQty = Math.max(0, (Number(line.countedQty) || 0) + 1);
+        flashVariant(grp.groupKey, line.variantId);
+        app.toast(`+1 Counted: ${grp.name} [${grp.colour}] • Sz ${line.displaySize}`, 'success');
+      } else {
+        // Generic model code scanned again -> focus active bar so user can tap the size (36..45)
+        activeGroupKey = grp.groupKey;
+        SoundFx.scan();
+        app.toast(`Selected ${grp.name} [${grp.colour}] — Tap the shoe size (36–45) below!`, 'info');
+      }
       return;
     }
 
-    // 3. Create a brand new Unlisted Scanned Group at top of sheet
+    // Brand new Unlisted Model/Barcode -> Create with full 36-45 Size Matrix so user can tap any size!
     const pid = `unlisted_grp_${Date.now()}`;
-    const vid = `unlisted_var_${Date.now()}`;
+    const defaultCol = 'Black';
+    const gKey = `${pid}__${defaultCol}`;
+    const defaultSizes = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
+    if (detectedSize && !defaultSizes.includes(detectedSize)) defaultSizes.push(detectedSize);
+
+    const lines: CountedVariantLine[] = sortLinesBySize(
+      defaultSizes.map((sz) => ({
+        variantId: `${pid}_sz_${sz}`,
+        productId: pid,
+        sku: `${modelName}-${sz}`,
+        barcode: detectedSize === sz ? q : '',
+        size: sz,
+        displaySize: getShoeDisplaySize(sz, { name: modelName }),
+        colour: defaultCol,
+        sellingPrice: 0,
+        costPrice: 0,
+        systemStock: 0,
+        countedQty: detectedSize ? (detectedSize === sz ? 1 : 0) : sz === '40' ? 1 : 0,
+        isCustom: true,
+        lastScannedAt: Date.now(),
+      })),
+    );
+
     const newGroup: CountedModelGroup = {
+      groupKey: gKey,
       productId: pid,
       name: modelName,
+      colour: defaultCol,
       brand: 'Unlisted',
-      category: 'Scanned Barcode',
+      category: 'Scanned Model',
       gender: '',
       sellingPrice: 0,
       costPrice: 0,
       isCustomModel: true,
-      lines: [
-        {
-          variantId: vid,
-          productId: pid,
-          sku: q,
-          barcode: q,
-          size: detectedSize,
-          displaySize: detectedSize === '-' ? '-' : getShoeDisplaySize(detectedSize, { name: modelName }),
-          colour: '',
-          sellingPrice: 0,
-          costPrice: 0,
-          systemStock: 0,
-          countedQty: 1,
-          isCustom: true,
-          lastScannedAt: Date.now(),
-        },
-      ],
+      lines,
     };
 
     groups.unshift(newGroup);
-    flashVariant(pid, vid);
-    app.toast(`New Barcode "${q}" added & counted (+1)!`, 'success');
+    const targetLine = lines.find((l) => l.countedQty > 0) || lines[0];
+    flashVariant(gKey, targetLine.variantId);
+    app.toast(
+      detectedSize
+        ? `New Code "${modelName}" (Sz ${detectedSize}) counted (+1)!`
+        : `New Code "${modelName}" added with Sizes 36–45! Tap sizes to count.`,
+      'success',
+    );
   }
 
   function handleSearchKeydown(e: KeyboardEvent) {
@@ -417,7 +484,6 @@
     if (!q) return;
     e.preventDefault();
 
-    // 1. Check if this exact barcode/SKU is already in our sheet (e.g. previously scanned unlisted barcode)
     if (tryIncrementExistingInSheet(q)) {
       query = '';
       debounced = '';
@@ -425,7 +491,6 @@
       return;
     }
 
-    // 2. Check exact barcode or SKU match across system catalog
     const exactVar = app.catalog.find(
       (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
     );
@@ -441,14 +506,12 @@
       return;
     }
 
-    // 3. Check partial catalog model match
     const hits = searchModels(q);
     if (hits.length > 0) {
       selectModelFromSearch(hits[0]);
       return;
     }
 
-    // 4. Not in system catalog -> automatically count as Unlisted Barcode!
     countUnlistedBarcode(q);
     query = '';
     debounced = '';
@@ -458,11 +521,8 @@
   function handleCameraScan(code: string) {
     const q = code.trim().toUpperCase();
     if (!q) return;
-
-    // 1. Check if already in sheet
     if (tryIncrementExistingInSheet(q)) return;
 
-    // 2. Check exact match in system catalog
     const exactVar = app.catalog.find(
       (v) => (v.barcode && v.barcode.toUpperCase() === q) || (v.sku && v.sku.toUpperCase() === q),
     );
@@ -470,9 +530,83 @@
       scanOrAddVariant(exactVar, 1);
       return;
     }
-
-    // 3. Automatically count as Unlisted Barcode!
     countUnlistedBarcode(q);
+  }
+
+  // ---------------- Colour management (Same Code, Different Colours) ----------------
+  function openAddColourModal(groupKey: string) {
+    colourModalGroupKey = groupKey;
+    customColourText = '';
+  }
+
+  function createColourVariantGroup(colourName: string) {
+    if (!colourModalGroupKey) return;
+    const src = groups.find((g) => g.groupKey === colourModalGroupKey);
+    if (!src) return;
+    const clean = colourName.trim();
+    if (!clean) {
+      app.toast('Please select or type a colour.', 'warning');
+      return;
+    }
+
+    // Check if this exact model + colour already exists
+    const existing = groups.find(
+      (g) => g.name.toUpperCase() === src.name.toUpperCase() && g.colour.toUpperCase() === clean.toUpperCase(),
+    );
+    if (existing) {
+      activeGroupKey = existing.groupKey;
+      colourModalGroupKey = null;
+      app.toast(`Switched to existing ${src.name} [${existing.colour}] card.`, 'info');
+      return;
+    }
+
+    const cloned = cloneGroupForNewColour(src, clean);
+    groups.unshift(cloned);
+    activeGroupKey = cloned.groupKey;
+    colourModalGroupKey = null;
+    SoundFx.scan();
+    persistNow();
+    app.toast(`Created "${cloned.name}" in colour [${clean}]! Now enter sizes.`, 'success');
+  }
+
+  // ---------------- Snapshots (Saved Sheets History) ----------------
+  function saveCurrentAsSnapshot() {
+    if (groups.length === 0) {
+      app.toast('Sheet is empty — count some shoes first.', 'warning');
+      return;
+    }
+    const label =
+      sessionTitle.trim() ||
+      `${locName} — ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+    const snap: SavedStockSnapshot = {
+      id: `snap_${Date.now()}`,
+      title: label,
+      locationId,
+      locationName: locName,
+      mode,
+      totalModels: groups.length,
+      totalPairs: stats.totalCounted,
+      savedAt: new Date().toLocaleString('en-GB'),
+      groups: JSON.parse(JSON.stringify(groups)),
+    };
+    snapshots = saveSnapshotToStorage(snap);
+    SoundFx.success();
+    app.toast(`Saved backup copy "${label}" to Saved Sheets!`, 'success');
+  }
+
+  function restoreSnapshot(snap: SavedStockSnapshot) {
+    locationId = snap.locationId || locationId;
+    mode = snap.mode;
+    sessionTitle = snap.title;
+    groups = JSON.parse(JSON.stringify(snap.groups));
+    activeGroupKey = groups[0]?.groupKey || null;
+    snapshotsModalOpen = false;
+    persistNow();
+    app.toast(`Loaded saved sheet "${snap.title}".`, 'success');
+  }
+
+  function removeSnapshot(id: string) {
+    snapshots = deleteSnapshotFromStorage(id);
   }
 
   // ---------------- bulk / helper actions ----------------
@@ -490,7 +624,9 @@
       addedCount++;
     }
     if (addedCount > 0) {
+      activeGroupKey = groups[0]?.groupKey || null;
       SoundFx.scan();
+      persistNow();
       app.toast(`Loaded ${addedCount} in-stock models for ${locName}.`, 'success');
     } else {
       app.toast('All in-stock models for this shop are already in the sheet.', 'info');
@@ -502,16 +638,20 @@
       l.countedQty = Math.max(0, l.systemStock);
     }
     SoundFx.scan();
+    persistNow();
   }
 
   function zeroGroupCounts(g: CountedModelGroup) {
     for (const l of g.lines) {
       l.countedQty = 0;
     }
+    persistNow();
   }
 
-  function removeGroup(productId: string) {
-    groups = groups.filter((g) => g.productId !== productId);
+  function removeGroup(groupKey: string) {
+    groups = groups.filter((g) => g.groupKey !== groupKey);
+    if (activeGroupKey === groupKey) activeGroupKey = groups[0]?.groupKey || null;
+    persistNow();
   }
 
   function clearEntireSheet() {
@@ -520,6 +660,7 @@
     groups = [];
     sessionTitle = '';
     notes = '';
+    activeGroupKey = null;
     clearStockCountDraft();
     app.toast('Stock count sheet cleared.', 'info');
   }
@@ -527,6 +668,7 @@
   // ---------------- manual / unlisted model entry ----------------
   function openManualModal() {
     manualName = query.trim().toUpperCase();
+    manualColour = 'Black';
     manualBrand = 'Generic';
     manualCategory = 'General';
     manualPrice = 0;
@@ -540,15 +682,17 @@
       app.toast('Please enter a Shoe Model Code or Name.', 'warning');
       return;
     }
+    const cleanCol = manualColour.trim() || 'Black';
     const pid = `custom_model_${Date.now()}`;
+    const gKey = `${pid}__${cleanCol}`;
     const lines: CountedVariantLine[] = Object.entries(manualSizes).map(([sz, qty]) => ({
-      variantId: `${pid}_sz_${sz}`,
+      variantId: `${gKey}_sz_${sz}`,
       productId: pid,
-      sku: `${cleanName}-${sz}`,
+      sku: `${cleanName}-${cleanCol.toUpperCase()}-${sz}`,
       barcode: '',
       size: sz,
       displaySize: getShoeDisplaySize(sz, { name: cleanName, brand: manualBrand, category: manualCategory }),
-      colour: '',
+      colour: cleanCol,
       sellingPrice: Number(manualPrice) || 0,
       costPrice: 0,
       systemStock: 0,
@@ -557,8 +701,10 @@
     }));
 
     groups.unshift({
+      groupKey: gKey,
       productId: pid,
       name: cleanName,
+      colour: cleanCol,
       brand: manualBrand.trim() || 'Generic',
       category: manualCategory.trim() || 'General',
       gender: '',
@@ -568,21 +714,23 @@
       lines: sortLinesBySize(lines),
     });
 
+    activeGroupKey = gKey;
     manualModalOpen = false;
     SoundFx.scan();
-    app.toast(`Added manual model "${cleanName}" to Stock Sheet.`, 'success');
+    persistNow();
+    app.toast(`Added "${cleanName}" [${cleanCol}] to Stock Sheet.`, 'success');
   }
 
   // ---------------- custom size for a model ----------------
-  function openCustomSizeModal(idx: number) {
-    customSizeGroupIdx = idx;
+  function openCustomSizeModal(groupKey: string) {
+    customSizeGroupKey = groupKey;
     customSizeInput = '';
     customSizeQty = 1;
   }
 
   function addCustomSizeToGroup() {
-    if (customSizeGroupIdx === null) return;
-    const g = groups[customSizeGroupIdx];
+    if (!customSizeGroupKey) return;
+    const g = groups.find((x) => x.groupKey === customSizeGroupKey);
     if (!g) return;
     const rawSz = customSizeInput.trim();
     if (!rawSz) {
@@ -596,13 +744,13 @@
       g.lines = sortLinesBySize([
         ...g.lines,
         {
-          variantId: `custom_${g.productId}_${rawSz}_${Date.now()}`,
+          variantId: `custom_${g.groupKey}_${rawSz}_${Date.now()}`,
           productId: g.productId,
           sku: `${g.name}-${rawSz}`,
           barcode: '',
           size: rawSz,
           displaySize: getShoeDisplaySize(rawSz, { name: g.name, brand: g.brand, category: g.category, gender: g.gender }),
-          colour: '',
+          colour: g.colour,
           sellingPrice: g.sellingPrice,
           costPrice: g.costPrice,
           systemStock: 0,
@@ -611,8 +759,9 @@
         },
       ]);
     }
-    customSizeGroupIdx = null;
+    customSizeGroupKey = null;
     SoundFx.scan();
+    persistNow();
   }
 
   // ---------------- filtered groups in sheet ----------------
@@ -621,10 +770,11 @@
     return groups.filter((g) => {
       if (q) {
         const mName = g.name.toLowerCase().includes(q);
+        const mCol = (g.colour || '').toLowerCase().includes(q);
         const mBrand = g.brand.toLowerCase().includes(q);
         const mCat = g.category.toLowerCase().includes(q);
         const mSku = g.lines.some((l) => l.sku.toLowerCase().includes(q) || l.barcode.toLowerCase().includes(q));
-        if (!mName && !mBrand && !mCat && !mSku) return false;
+        if (!mName && !mCol && !mBrand && !mCat && !mSku) return false;
       }
       const gCnt = g.lines.reduce((s, l) => s + l.countedQty, 0);
       const hasDiff = g.lines.some((l) => l.countedQty !== l.systemStock);
@@ -695,7 +845,6 @@
           const targetQty = mode === 'audit' ? Math.max(0, Number(l.countedQty) || 0) : Math.max(0, sys + (Number(l.countedQty) || 0));
           const delta = targetQty - sys;
 
-          // Only hit Supabase if quantity actually changed (or in audit mode when explicitly counted)
           if (delta === 0) continue;
 
           const existing = await restGet<{ id: string }[]>(
@@ -742,6 +891,7 @@
       app.syncVersion++;
       SoundFx.success();
       confirmSyncOpen = false;
+      persistNow();
       app.toast(`Updated ${updatedCount} size variants in ${locName}!`, 'success');
     } catch (e: any) {
       console.error(e);
@@ -759,20 +909,42 @@
   <section class="card p-4 sm:p-5">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <span class="chip font-mono text-[10px] uppercase tracking-wider">Shop Stock Take & Excel Hub</span>
-          <span class="text-xs text-dim">• Auto-saved to device</span>
+          <span class="inline-flex items-center gap-1 rounded-full bg-ok/15 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-ok">
+            <CheckCircle2 class="h-3 w-3" />
+            <span>Auto-Saved {lastSavedTime ? `(${lastSavedTime})` : ''} • Safe on Refresh</span>
+          </span>
         </div>
         <h1 class="mt-1 font-display text-lg font-bold tracking-tight text-fg sm:text-xl">
           Shop Stock Count & Excel Sheet Builder
         </h1>
         <p class="mt-0.5 text-xs text-muted">
-          Scan barcodes or enter shoe sizes by model code, then download as an Excel (CSV) sheet or update shop stock.
+          Scan barcodes, count multiple sizes & colours under the same code, and export to Excel (CSV).
         </p>
       </div>
 
       <!-- Top Quick Actions -->
       <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="btn btn-sm"
+          onclick={saveCurrentAsSnapshot}
+          disabled={groups.length === 0}
+          title="Save a named backup snapshot of this sheet"
+        >
+          <BookmarkCheck class="h-3.5 w-3.5 text-ok" />
+          <span>Save Backup Copy</span>
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          onclick={() => (snapshotsModalOpen = true)}
+          title="View or reload saved stock count sheets"
+        >
+          <FolderClock class="h-3.5 w-3.5 text-muted" />
+          <span>Saved Sheets ({snapshots.length})</span>
+        </button>
         <button
           type="button"
           class="btn btn-sm"
@@ -799,7 +971,7 @@
             title="Clear current stock count sheet"
           >
             <RotateCcw class="h-3.5 w-3.5" />
-            <span>Reset Sheet</span>
+            <span>Reset</span>
           </button>
         {/if}
       </div>
@@ -905,7 +1077,7 @@
     <!-- KPI Strip -->
     <div class="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
       <div class="rounded-lg border border-line bg-raised/60 px-3 py-2.5">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-dim">Models in Sheet</div>
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-dim">Models / Colours</div>
         <div class="mt-0.5 font-mono text-base font-bold text-fg">
           {stats.countedModels} <span class="text-xs font-normal text-dim">/ {stats.modelsCount}</span>
         </div>
@@ -943,12 +1115,12 @@
     </div>
   </section>
 
-  <!-- STEP 2: BARCODE SCANNER & MODEL SEARCH -->
+  <!-- STEP 2: BARCODE SCANNER & MODEL SEARCH + QUICK 1-TAP SIZE & COLOUR BAR -->
   <section class="card p-4 sm:p-5">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2">
         <ScanLine class="h-4 w-4 text-fg" />
-        <h2 class="text-sm font-semibold text-fg">Scan Barcode or Search Shoe Model to Count</h2>
+        <h2 class="text-sm font-semibold text-fg">Scan Barcode or Search Shoe Code</h2>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -962,7 +1134,7 @@
         </button>
         <button
           type="button"
-          class="btn btn-sm"
+          class="btn btn-primary btn-sm"
           onclick={() => (cameraOpen = true)}
         >
           <Camera class="h-3.5 w-3.5" />
@@ -973,6 +1145,7 @@
 
     <!-- Search / Barcode Input -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="relative mt-3" role="search" onclick={(e) => e.stopPropagation()}>
       <div class="relative flex items-center">
         <Search class="pointer-events-none absolute left-3.5 h-4 w-4 text-dim" />
@@ -980,7 +1153,7 @@
           bind:this={searchInput}
           type="text"
           class="input h-11 pl-10 pr-24 font-mono text-sm"
-          placeholder="Scan box barcode or type shoe code (e.g. SFW006, UB0622)..."
+          placeholder="Scan barcode or type shoe code (e.g. SFW006, UB0622)..."
           value={query}
           oninput={(e) => onSearchInput((e.currentTarget as HTMLInputElement).value)}
           onfocus={() => { if (query.trim()) showResults = true; }}
@@ -1017,7 +1190,7 @@
                   }}
                 >
                   <Plus class="h-3.5 w-3.5" />
-                  <span>Count Barcode "{debounced.toUpperCase()}" (+1)</span>
+                  <span>Add "{debounced.toUpperCase()}" with Sizes 36–45</span>
                 </button>
                 <button
                   type="button"
@@ -1025,7 +1198,7 @@
                   onclick={() => { showResults = false; openManualModal(); }}
                 >
                   <PackagePlus class="h-3.5 w-3.5" />
-                  <span>Add with All Sizes (36–45)</span>
+                  <span>Custom Details & Price</span>
                 </button>
               </div>
             </div>
@@ -1057,7 +1230,7 @@
                   </div>
                   <div class="shrink-0 text-right">
                     <div class="font-mono text-xs font-bold text-fg">Sys: {hit.shopStock} prs</div>
-                    <div class="mt-0.5 text-[11px] font-medium text-muted">Click to count →</div>
+                    <div class="mt-0.5 text-[11px] font-medium text-muted">Select →</div>
                   </div>
                 </button>
               {/each}
@@ -1066,18 +1239,87 @@
         </div>
       {/if}
     </div>
+
+    <!-- ACTIVE DESIGN QUICK 1-TAP SIZE & COLOUR BAR (Solves scanning multiple shoes of same code with different sizes/colours!) -->
+    {#if activeGroup}
+      <div class="mt-3.5 rounded-xl border border-fg/30 bg-raised/60 p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded bg-fg px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-bg">Active Design</span>
+            <span class="font-display text-sm font-bold text-fg">{activeGroup.name}</span>
+
+            <!-- Colour Selector for Active Design -->
+            <div class="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1 text-xs">
+              <Palette class="h-3.5 w-3.5 text-muted" />
+              <select
+                class="bg-transparent font-medium text-fg focus:outline-none cursor-pointer"
+                bind:value={activeGroup.colour}
+                onchange={() => persistNow()}
+                aria-label="Active model colour"
+              >
+                {#each COMMON_SHOE_COLOURS as col}
+                  <option class="bg-surface text-fg" value={col}>{col}</option>
+                {/each}
+              </select>
+            </div>
+
+            <!-- Add Another Colour of Same Code -->
+            <button
+              type="button"
+              class="btn btn-sm h-7 px-2.5 text-[11px]"
+              onclick={() => openAddColourModal(activeGroup.groupKey)}
+              title="Count the same shoe code in another colour (e.g. Black vs Brown)"
+            >
+              <Palette class="h-3 w-3" />
+              <span>+ Another Colour</span>
+            </button>
+          </div>
+
+          <span class="text-[11px] text-muted">
+            Tap any size below to add <b>+1 pair</b> to <b>{activeGroup.name} ({activeGroup.colour})</b>:
+          </span>
+        </div>
+
+        <!-- 1-Tap Size Buttons -->
+        <div class="mt-2.5 flex flex-wrap gap-1.5">
+          {#each activeGroup.lines as ln (ln.variantId)}
+            <button
+              type="button"
+              class="flex min-w-[60px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border px-2 py-1.5 transition active:scale-95
+                {ln.countedQty > 0
+                  ? 'border-fg bg-fg text-bg shadow-xs'
+                  : 'border-line bg-surface text-fg hover:border-fg/50'}"
+              onclick={() => {
+                ln.countedQty = Math.max(0, (Number(ln.countedQty) || 0) + 1);
+                flashVariant(activeGroup.groupKey, ln.variantId);
+              }}
+            >
+              <span class="font-mono text-[11px] font-semibold opacity-80">Sz {ln.displaySize}</span>
+              <span class="font-mono text-sm font-extrabold">{ln.countedQty}</span>
+            </button>
+          {/each}
+          <button
+            type="button"
+            class="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface/50 px-3 py-1.5 text-xs font-medium text-muted hover:border-fg hover:text-fg"
+            onclick={() => openCustomSizeModal(activeGroup.groupKey)}
+          >
+            <Plus class="h-3.5 w-3.5" />
+            <span class="text-[10px]">+ Size</span>
+          </button>
+        </div>
+      </div>
+    {/if}
   </section>
 
   <!-- STEP 3: EXPORT EXCEL / PRINT / UPDATE BAR + STOCK COUNT SHEET -->
   <section class="card p-4 sm:p-5">
-    <!-- Action Toolbar: Excel Downloads, Print, WhatsApp, DB Sync -->
     <div class="flex flex-col gap-3 border-b border-line pb-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <h2 class="text-sm font-semibold text-fg">
-          3. Counted Stock Sheet ({groups.length} {groups.length === 1 ? 'Model' : 'Models'})
+          3. Counted Stock Sheet ({groups.length} {groups.length === 1 ? 'Entry' : 'Entries'})
         </h2>
         <p class="text-xs text-muted">
-          Enter quantities per size below. Download as an Excel CSV sheet at any time or update system stock.
+          Each Model + Colour has its own row. Download as an Excel CSV sheet at any time or update system stock.
         </p>
       </div>
 
@@ -1087,7 +1329,7 @@
           class="btn btn-primary btn-sm"
           onclick={handleExportMatrixCSV}
           disabled={groups.length === 0}
-          title="Download Horizontal Size-Matrix Excel CSV (One row per model, Sizes 36-45 as columns)"
+          title="Download Horizontal Size-Matrix Excel CSV (Model | Colour | Sizes 36-45)"
         >
           <Table class="h-3.5 w-3.5" />
           <span>Excel (Size Matrix)</span>
@@ -1098,7 +1340,7 @@
           class="btn btn-sm font-semibold"
           onclick={handleExportDetailedCSV}
           disabled={groups.length === 0}
-          title="Download Detailed SKU/Barcode Excel CSV (One row per size variant)"
+          title="Download Detailed SKU/Barcode Excel CSV (One row per size & colour)"
         >
           <FileSpreadsheet class="h-3.5 w-3.5" />
           <span>Excel (Detailed SKU)</span>
@@ -1162,7 +1404,7 @@
           <input
             type="text"
             class="input h-8 pl-8 text-xs"
-            placeholder="Filter counted models..."
+            placeholder="Filter by code or colour..."
             bind:value={sheetSearch}
           />
         </div>
@@ -1199,14 +1441,17 @@
     {:else}
       <!-- Model Cards List -->
       <div class="mt-4 space-y-3">
-        {#each visibleGroups as g, gIdx (g.productId)}
+        {#each visibleGroups as g (g.groupKey)}
           {@const modelSys = g.lines.reduce((s, l) => s + (Number(l.systemStock) || 0), 0)}
           {@const modelCnt = g.lines.reduce((s, l) => s + (Number(l.countedQty) || 0), 0)}
           {@const modelDiff = mode === 'audit' ? modelCnt - modelSys : modelCnt}
-          {@const realIdx = groups.findIndex((x) => x.productId === g.productId)}
+          {@const isActive = activeGroupKey === g.groupKey}
 
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="rounded-xl border transition {activeProductId === g.productId ? 'border-fg/50 bg-raised/40' : 'border-line bg-raised/20'} p-3.5 sm:p-4"
+            class="rounded-xl border transition {isActive ? 'border-fg/60 bg-raised/40' : 'border-line bg-raised/20'} p-3.5 sm:p-4"
+            onclick={() => (activeGroupKey = g.groupKey)}
           >
             <!-- Card Header -->
             <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -1220,8 +1465,34 @@
                       placeholder="Model Name / Barcode"
                       title="Edit unlisted model name or code"
                     />
+                  {:else}
+                    <span class="font-display text-base font-bold text-fg">{g.name}</span>
+                  {/if}
+
+                  <!-- Colour Dropdown on Card -->
+                  <div class="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-xs">
+                    <Palette class="h-3 w-3 text-muted" />
+                    <select
+                      class="bg-transparent font-semibold text-fg focus:outline-none cursor-pointer"
+                      bind:value={g.colour}
+                      onchange={() => {
+                        for (const ln of g.lines) ln.colour = g.colour;
+                        persistNow();
+                      }}
+                      aria-label="Colour for {g.name}"
+                    >
+                      {#each COMMON_SHOE_COLOURS as col}
+                        <option class="bg-surface text-fg" value={col}>{col}</option>
+                      {/each}
+                      {#if g.colour && !COMMON_SHOE_COLOURS.includes(g.colour)}
+                        <option class="bg-surface text-fg" value={g.colour}>{g.colour}</option>
+                      {/if}
+                    </select>
+                  </div>
+
+                  {#if g.isCustomModel}
                     <span class="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-warn">
-                      Unlisted Barcode
+                      Unlisted
                     </span>
                     <div class="inline-flex items-center gap-1 font-mono text-xs text-muted">
                       <span>Rs.</span>
@@ -1234,16 +1505,15 @@
                           for (const ln of g.lines) ln.sellingPrice = Number(g.sellingPrice) || 0;
                         }}
                         placeholder="Price"
-                        title="Optional selling price for Excel report"
                       />
                     </div>
                   {:else}
-                    <span class="font-display text-base font-bold text-fg">{g.name}</span>
                     <span class="chip text-[10px]">{g.brand}</span>
                     <span class="text-xs text-dim">{g.category}</span>
                     <span class="font-mono text-xs font-semibold text-muted">{fmtMoney(g.sellingPrice)}</span>
                   {/if}
                 </div>
+
                 <div class="mt-1 flex flex-wrap items-center gap-3 font-mono text-xs">
                   <span class="text-dim">System: <b class="text-muted">{modelSys} prs</b></span>
                   <span class="text-fg">
@@ -1259,11 +1529,20 @@
 
               <!-- Model Quick Actions -->
               <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  class="btn btn-sm text-[11px]"
+                  onclick={(e) => { e.stopPropagation(); openAddColourModal(g.groupKey); }}
+                  title="Add the same shoe code in another colour (e.g. Black, Brown, Tan)"
+                >
+                  <Palette class="h-3 w-3" />
+                  <span>+ Colour</span>
+                </button>
                 {#if !g.isCustomModel}
                   <button
                     type="button"
                     class="btn btn-sm text-[11px]"
-                    onclick={() => copySystemToCountedForGroup(g)}
+                    onclick={(e) => { e.stopPropagation(); copySystemToCountedForGroup(g); }}
                     title="Copy system stock into counted boxes for this model"
                   >
                     <Copy class="h-3 w-3" />
@@ -1273,7 +1552,7 @@
                 <button
                   type="button"
                   class="btn btn-sm text-[11px]"
-                  onclick={() => openCustomSizeModal(realIdx)}
+                  onclick={(e) => { e.stopPropagation(); openCustomSizeModal(g.groupKey); }}
                   title="Add another size to this shoe model"
                 >
                   <Plus class="h-3 w-3" />
@@ -1282,7 +1561,7 @@
                 <button
                   type="button"
                   class="btn btn-sm text-[11px] text-muted hover:text-fg"
-                  onclick={() => zeroGroupCounts(g)}
+                  onclick={(e) => { e.stopPropagation(); zeroGroupCounts(g); }}
                   title="Reset all sizes of this model to 0"
                 >
                   <span>Zero</span>
@@ -1290,7 +1569,7 @@
                 <button
                   type="button"
                   class="btn btn-ghost btn-sm text-dim hover:text-bad"
-                  onclick={() => removeGroup(g.productId)}
+                  onclick={(e) => { e.stopPropagation(); removeGroup(g.groupKey); }}
                   aria-label="Remove model from sheet"
                 >
                   <Trash2 class="h-3.5 w-3.5" />
@@ -1389,6 +1668,121 @@
   <CameraScanner onscan={handleCameraScan} onclose={() => (cameraOpen = false)} />
 {/if}
 
+<!-- ADD ANOTHER COLOUR OF SAME MODEL MODAL -->
+{#if colourModalGroupKey}
+  {@const targetGrp = groups.find((g) => g.groupKey === colourModalGroupKey)}
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-xs sm:items-center sm:p-4">
+    <div class="card w-full max-w-md rounded-t-2xl p-5 sm:rounded-2xl">
+      <div class="flex items-center justify-between border-b border-line pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-fg">Add Another Colour for "{targetGrp?.name}"</h3>
+          <p class="text-xs text-muted">Creates a separate size-matrix row for the new colour.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick={() => (colourModalGroupKey = null)}>
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+
+      <div class="mt-3">
+        <span class="label">Tap a Colour to Create Row Immediately:</span>
+        <div class="mt-1.5 grid grid-cols-3 gap-2">
+          {#each COMMON_SHOE_COLOURS.filter((c) => c !== 'All / Default') as col}
+            <button
+              type="button"
+              class="btn btn-sm justify-center font-medium"
+              onclick={() => createColourVariantGroup(col)}
+            >
+              {col}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <div class="mt-4 border-t border-line pt-3">
+        <label class="label" for="customColInput">Or Type Custom Colour Name:</label>
+        <div class="flex gap-2">
+          <input
+            id="customColInput"
+            type="text"
+            class="input flex-1"
+            placeholder="e.g. Camel / Navy Blue / Cream"
+            bind:value={customColourText}
+            onkeydown={(e) => e.key === 'Enter' && createColourVariantGroup(customColourText)}
+          />
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={() => createColourVariantGroup(customColourText)}
+          >
+            Add Colour
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- SAVED SHEETS / SNAPSHOTS MODAL -->
+{#if snapshotsModalOpen}
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-xs sm:items-center sm:p-4">
+    <div class="card max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl p-5 sm:rounded-2xl">
+      <div class="flex items-center justify-between border-b border-line pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-fg">Saved Stock Count Sheets ({snapshots.length})</h3>
+          <p class="text-xs text-muted">Reload a previous count sheet or download its Excel file anytime.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick={() => (snapshotsModalOpen = false)}>
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+
+      {#if snapshots.length === 0}
+        <p class="py-8 text-center text-xs text-muted">
+          No saved backup sheets yet. Click "Save Backup Copy" at the top to save snapshots.
+        </p>
+      {:else}
+        <div class="mt-3 divide-y divide-line">
+          {#each snapshots as s (s.id)}
+            <div class="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="min-w-0">
+                <div class="truncate text-xs font-bold text-fg">{s.title}</div>
+                <div class="font-mono text-[11px] text-dim">
+                  {s.locationName} • {s.totalModels} models • {s.totalPairs} pairs • {s.savedAt}
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm text-[11px]"
+                  onclick={() => restoreSnapshot(s)}
+                >
+                  Open
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm text-[11px]"
+                  onclick={() => exportMatrixStockCountCSV(s.groups, s.locationName, s.mode, s.title)}
+                  title="Download Matrix Excel"
+                >
+                  <Download class="h-3.5 w-3.5" />
+                  <span>Excel</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm text-dim hover:text-bad"
+                  onclick={() => removeSnapshot(s.id)}
+                >
+                  <Trash2 class="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <!-- MANUAL / UNLISTED MODEL MODAL -->
 {#if manualModalOpen}
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-xs sm:items-center sm:p-4">
@@ -1404,15 +1798,23 @@
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div class="sm:col-span-2">
+        <div>
           <label class="label" for="manualModelCode">Shoe Code / Model Name *</label>
           <input
             id="manualModelCode"
             type="text"
             class="input"
-            placeholder="e.g. SFW-NEW-01 or Nike Air Force Black"
+            placeholder="e.g. SFW-NEW-01"
             bind:value={manualName}
           />
+        </div>
+        <div>
+          <label class="label" for="manualColourSelect">Colour</label>
+          <select id="manualColourSelect" class="input" bind:value={manualColour}>
+            {#each COMMON_SHOE_COLOURS as col}
+              <option value={col}>{col}</option>
+            {/each}
+          </select>
         </div>
         <div>
           <label class="label" for="manualBrandInput">Brand</label>
@@ -1454,12 +1856,13 @@
 {/if}
 
 <!-- ADD CUSTOM SIZE MODAL -->
-{#if customSizeGroupIdx !== null}
+{#if customSizeGroupKey !== null}
+  {@const targetGrp = groups.find((x) => x.groupKey === customSizeGroupKey)}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
     <div class="card w-full max-w-sm p-5">
       <div class="flex items-center justify-between border-b border-line pb-3">
-        <h3 class="text-sm font-bold text-fg">Add Size to {groups[customSizeGroupIdx]?.name}</h3>
-        <button class="btn btn-ghost btn-sm" onclick={() => (customSizeGroupIdx = null)}>
+        <h3 class="text-sm font-bold text-fg">Add Size to {targetGrp?.name} ({targetGrp?.colour})</h3>
+        <button class="btn btn-ghost btn-sm" onclick={() => (customSizeGroupKey = null)}>
           <X class="h-4 w-4" />
         </button>
       </div>
@@ -1486,7 +1889,7 @@
         </div>
       </div>
       <div class="mt-5 flex justify-end gap-2">
-        <button class="btn" onclick={() => (customSizeGroupIdx = null)}>Cancel</button>
+        <button class="btn" onclick={() => (customSizeGroupKey = null)}>Cancel</button>
         <button class="btn btn-primary" onclick={addCustomSizeToGroup}>Add Size</button>
       </div>
     </div>

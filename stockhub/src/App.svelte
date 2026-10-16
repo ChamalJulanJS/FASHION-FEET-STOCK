@@ -18,15 +18,21 @@
       app.deferredPwaPrompt = e;
     });
   });
+
+  $effect(() => {
+    try {
+      localStorage.setItem('ff_hub_active_tab', app.tab);
+    } catch {}
+  });
 </script>
 
 <div class="flex min-h-full flex-col bg-bg text-fg">
   <Navbar />
   <main class="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-24 pt-5 md:px-6 md:pb-10">
-    <!-- Keep Transfer mounted so cart/scanner state survives tab switches -->
+    <!-- Keep Transfer and StockCount mounted so state/scanner survives tab switches -->
     <div class:hidden={app.tab !== 'transfer'}><Transfer /></div>
+    <div class:hidden={app.tab !== 'stockcount'}><StockCount /></div>
     {#if app.tab === 'reorder'}<Reorder />{/if}
-    {#if app.tab === 'stockcount'}<StockCount />{/if}
     {#if app.tab === 'history'}<History />{/if}
   </main>
   <MobileNav />
