@@ -115,22 +115,25 @@
           <tr><td colspan="5" class="td py-8 text-center text-muted">No recent transfers recorded in database.</td></tr>
         {:else}
           {#each transfers as t (t.id)}
-            <tr class="hover:bg-raised/40">
-              <td class="td font-mono font-semibold text-accent">#{t.id ? t.id.slice(0, 8).toUpperCase() : 'TRN'}</td>
-              <td class="td text-muted">{dateStr(t)}</td>
+            <tr class="transition-colors hover:bg-raised/40">
+              <td class="td font-mono text-xs font-semibold text-fg">#{t.id ? t.id.slice(0, 8).toUpperCase() : 'TRN'}</td>
+              <td class="td font-mono text-xs text-muted">{dateStr(t)}</td>
               <td class="td">
-                <span class="inline-flex items-center gap-2 font-medium text-fg">
-                  {fromName(t)} <ArrowRight class="size-3.5 text-dim" aria-hidden="true" /> {toName(t)}
+                <span class="inline-flex items-center gap-2 text-xs font-medium text-fg">
+                  <span>{fromName(t)}</span>
+                  <ArrowRight class="size-3.5 text-dim" aria-hidden="true" />
+                  <span>{toName(t)}</span>
                 </span>
               </td>
               <td class="td">
-                <span class="chip {isReceived(t) ? 'text-fg' : 'border-accent/40 text-accent'}">
+                <span class="chip text-[11px] {isReceived(t) ? 'text-ok border-ok/30 bg-ok/5' : 'text-warn border-warn/30 bg-warn/5'}">
                   {isReceived(t) ? 'Received' : 'In-Transit'}
                 </span>
               </td>
               <td class="td text-right">
                 <button class="btn btn-sm" disabled={slipBusy === t.id} onclick={() => viewSlip(t.id)} title="Reprint official dispatch slip">
-                  <Printer class="size-3.5" /> Slip
+                  <Printer class="size-3.5 text-muted" />
+                  <span>Slip</span>
                 </button>
               </td>
             </tr>

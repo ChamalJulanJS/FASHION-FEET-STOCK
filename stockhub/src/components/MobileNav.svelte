@@ -16,20 +16,21 @@
 >
   {#each items as it}
     {@const Icon = it.icon}
+    {@const active = app.tab === it.id}
     <button
-      class="relative flex cursor-pointer flex-col items-center gap-1 py-2.5 text-[11px] font-medium {app.tab === it.id ? 'text-accent' : 'text-dim'}"
+      class="relative flex cursor-pointer flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition {active ? 'text-fg font-semibold' : 'text-dim hover:text-muted'}"
       onclick={() => (app.tab = it.id)}
     >
-      <Icon class="h-5 w-5" />{it.label}
+      <Icon class="h-4 w-4" />{it.label}
       {#if it.id === 'transfer' && cartCount > 0}
-        <span class="absolute right-[28%] top-1.5 grid min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold leading-4 text-white">{cartCount}</span>
+        <span class="absolute right-[26%] top-1.5 grid min-w-4 place-items-center rounded-full bg-fg px-1 font-mono text-[10px] font-bold leading-4 text-bg">{cartCount}</span>
       {/if}
     </button>
   {/each}
-  <a href="transfer_receiver.html" class="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-dim">
-    <PackageCheck class="h-5 w-5" />Receiver
+  <a href="transfer_receiver.html" class="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-dim hover:text-muted">
+    <PackageCheck class="h-4 w-4" />Receiver
   </a>
-  <button class="flex cursor-pointer flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-dim" onclick={() => (app.staffManagerOpen = true)}>
-    <Users class="h-5 w-5" />Staff
+  <button class="flex cursor-pointer flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-dim hover:text-muted" onclick={() => (app.staffManagerOpen = true)}>
+    <Users class="h-4 w-4" />Staff
   </button>
 </nav>

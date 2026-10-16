@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FashionFeet Stock Hub · Size Receiver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      if (localStorage.getItem('ff_theme') === 'light') {
+        document.documentElement.classList.add('light');
+      }
+    </script>
+    <style>
+        :root {
+            --bg: #09090b;
+            --surface: #111114;
+            --raised: #18181c;
+            --line: rgba(255, 255, 255, 0.08);
+            --fg: #fafafa;
+            --muted: #a1a1aa;
+            --dim: #71717a;
+            --ok: #10b981;
+            --warn: #f59e0b;
+            --bad: #ef4444;
+        }
+        :root.light {
+            --bg: #f7f7f8;
+            --surface: #ffffff;
+            --raised: #f1f2f4;
+            --line: rgba(24, 24, 27, 0.09);
+            --fg: #09090b;
+            --muted: #52525b;
+            --dim: #71717a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            border-bottom: 1px solid var(--line);
+            background: var(--surface);
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: var(--fg);
+        }
+        .brand-mark {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: var(--fg);
+            color: var(--bg);
+            display: grid;
+            place-items: center;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 14px; line-height: 1.1; }
+        .brand-sub { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
+        .header-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        h1 { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 700; margin: 0 0 4px; color: var(--fg); }
+        p.sub { color: var(--dim); font-size: 12px; margin: 0; }
+        .card {
+            border: 1px solid var(--line);
+            padding: 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            background: var(--surface);
+        }
+        .card:hover { border-color: var(--muted); background: var(--raised); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            border: 1px solid var(--line);
+        }
+        .received { color: var(--ok); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08); }
+        .pending { color: var(--warn); border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.08); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 12px; }
+        th { background: var(--raised); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); font-weight: 600; }
+        input {
+            padding: 7px 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            width: 100%;
+            background: var(--raised);
+            color: var(--fg);
+            font-size: 12px;
+            outline: none;
+        }
+        input:focus { border-color: var(--muted); }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 7px 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--raised);
+            color: var(--fg);
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 12px;
+            text-decoration: none;
+            transition: 0.15s;
+        }
+        .btn:hover { border-color: var(--muted); }
+        .btn-primary { background: var(--fg); color: var(--bg); border-color: transparent; font-weight: 600; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-add { margin-top: 10px; font-size: 11px; }
+        .btn-remove { color: var(--bad); background: transparent; border-color: transparent; padding: 4px 8px; }
+        .btn-remove:hover { background: rgba(239, 68, 68, 0.1); border-color: transparent; }
+        .btn-save { width: 100%; padding: 11px 20px; font-size: 13px; margin-top: 16px; }
+        .btn-back { margin-bottom: 14px; }
+        .item-box {
+            border: 1px solid var(--line);
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            background: var(--surface);
+        }
+        .item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+        .msg { padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; display: none; font-size: 12px; font-weight: 500; border: 1px solid var(--line); }
+        .error { background: rgba(239, 68, 68, 0.1); color: var(--bad); border-color: rgba(239, 68, 68, 0.3); }
+        .success { background: rgba(16, 185, 129, 0.1); color: var(--ok); border-color: rgba(16, 185, 129, 0.3); }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a href="index.html" class="brand">
+            <div class="brand-mark">FF</div>
+            <div>
+                <div class="brand-title">FashionFeet</div>
+                <div class="brand-sub">Size Receiver</div>
+            </div>
+        </a>
+        <a href="index.html" class="btn">← Back to Stock Hub</a>
+    </header>
+
+    <div class="container">
+        <div class="header-card">
+            <div>
+                <h1>Branch Transfer Receiver · Split by Size</h1>
+                <p class="sub">Select an incoming branch transfer below to split generic footwear items into size-specific stock variants.</p>
+            </div>
+            <button class="btn" onclick="loadTransfers()">Refresh Transfers</button>
+        </div>
+        
+        <div id="msgBox" class="msg"></div>
+        <div id="loading" style="color: var(--muted); font-size: 12px; padding: 24px 0; text-align: center;">Connecting to Supabase transfer records...</div>
+        
+        <div id="transfersList" class="grid" style="display: none;"></div>
+        
+        <div id="transferDetails" style="display: none;">
+            <button class="btn btn-back" onclick="showTransfers()">← Back to All Transfers</button>
+            <div id="itemsLoading" style="color: var(--muted); font-size: 12px; padding: 16px 0;">Loading transfer items...</div>
+            <div id="itemsContainer"></div>
+            <button id="saveBtn" class="btn btn-primary btn-save" onclick="saveSplits()">Confirm &amp; Process Size Splits</button>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'https://qrzpsvyqiozhygtoklhv.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyenBzdnlxaW96aHlndG9rbGh2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1MTY4MSwiZXhwIjoyMDkwMDI3NjgxfQ.UNxy_PaglB-lVmOP6Ngl1jtVrkQNJ2My5-JL_VV-Agk';
+        const sb = window.supabase.createClient(supabaseUrl, supabaseKey);
+        const shoeGalleryLocationId = 'b9730905-c070-4ee8-960e-74d2fef1592b';
+
+        let currentTransfer = null;
+        let currentItems = [];
+
+        async function loadTransfers() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('transfersList').style.display = 'none';
+            document.getElementById('transferDetails').style.display = 'none';
+            hideMsg();
+
+            const { data, error } = await sb
+                .from('transfers')
+                .select('*')
+                .eq('to_location', shoeGalleryLocationId)
+                .order('created_at', { ascending: false });
+
+            document.getElementById('loading').style.display = 'none';
+            if (error) {
+                showMsg('Error loading transfers: ' + error.message, true);
+                return;
+            }
+
+            const list = document.getElementById('transfersList');
+            list.innerHTML = '';
+            data.forEach(t => {
+                let div = document.createElement('div');
+                div.className = 'card';
+                let dateStr = new Date(t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                let statusClass = t.status === 'received' ? 'received' : 'pending';
+                let shortId = t.id ? '#' + t.id.slice(0, 8).toUpperCase() : 'Transfer';
+                div.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="mono" style="font-weight: 600; font-size: 13px; color: var(--fg);">${shortId}</span>
+                        <span class="status ${statusClass}">${t.status}</span>
+                    </div>
+                    <div class="mono" style="color: var(--muted); font-size: 11px;">Date: ${dateStr}</div>
+                `;
+                div.onclick = () => selectTransfer(t);
+                list.appendChild(div);
+            });
+            list.style.display = 'grid';
+        }
+
+        async function selectTransfer(t) {
+            currentTransfer = t;
+            document.getElementById('transfersList').style.display = 'none';
+            document.getElementById('transferDetails').style.display = 'block';
+            document.getElementById('itemsLoading').style.display = 'block';
+            document.getElementById('itemsContainer').innerHTML = '';
+            document.getElementById('saveBtn').style.display = 'none';
+            hideMsg();
+
+            const { data, error } = await sb
+                .from('stock_movements')
+                .select('id, quantity, variant_id, created_by, product_variants(sku, product_id, products(name, category, brand, gender, selling_price, cost_price))')
+                .eq('reference_id', t.id)
+                .eq('type', 'branch_transfer')
+                .eq('to_location', shoeGalleryLocationId)
+                .gt('quantity', 0);
+
+            document.getElementById('itemsLoading').style.display = 'none';
+            if (error) {
+                showMsg('Error loading items: ' + error.message, true);
+                return;
+            }
+
+            currentItems = data.map(item => ({
+                ...item,
+                splits: [{ size: '', colour: '', qty: item.quantity }]
+            }));
+            
+            renderItems();
+            document.getElementById('saveBtn').style.display = 'block';
+        }
+
+        function renderItems() {
+            const container = document.getElementById('itemsContainer');
+            container.innerHTML = '';
+
+            currentItems.forEach((item, itemIdx) => {
+                let name = (item.product_variants.products && item.product_variants.products.name) ? item.product_variants.products.name : item.product_variants.sku;
+                
+                let splitTotal = item.splits.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
+                let totalColor = splitTotal === item.quantity ? 'var(--ok)' : 'var(--bad)';
+
+                let box = document.createElement('div');
+                box.className = 'item-box';
+                
+                let header = `
+                    <div class="item-header">
+                        <div>
+                            <div style="font-weight: 700; color: var(--fg); font-size: 15px;">${name}</div>
+                            <div class="mono" style="font-size: 11px; color: var(--muted); margin-top: 2px;">SKU: ${item.product_variants.sku} · Transferred Qty: <b style="color:var(--fg);">${item.quantity} prs</b></div>
+                        </div>
+                        <div class="mono" style="font-weight: 600; font-size: 12px; color: ${totalColor}">
+                            Split Total: ${splitTotal} / ${item.quantity}
+                        </div>
+                    </div>
+                `;
+
+                let tableRows = item.splits.map((split, sIdx) => `
+                    <tr>
+                        <td><input type="text" placeholder="e.g. 40" value="${split.size}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'size', this.value)"></td>
+                        <td><input type="text" placeholder="e.g. BLK" value="${split.colour}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'colour', this.value)"></td>
+                        <td><input type="number" min="1" value="${split.qty}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'qty', this.value)"></td>
+                        <td style="width: 80px; text-align: right;"><button class="btn btn-remove" onclick="removeSplit(${itemIdx}, ${sIdx})">Remove</button></td>
+                    </tr>
+                `).join('');
+
+                box.innerHTML = header + `
+                    <table>
+                        <thead><tr><th>Size</th><th>Colour (Optional)</th><th>Quantity</th><th style="text-align:right;">Action</th></tr></thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                    <button class="btn btn-add" onclick="addSplit(${itemIdx})">+ Add Split Row</button>
+                `;
+                container.appendChild(box);
+            });
+        }
+
+        function updateSplit(itemIdx, splitIdx, field, value) {
+            if (field === 'qty') value = parseInt(value) || 0;
+            currentItems[itemIdx].splits[splitIdx][field] = value;
+            renderItems();
+        }
+
+        function addSplit(itemIdx) {
+            currentItems[itemIdx].splits.push({ size: '', colour: '', qty: 1 });
+            renderItems();
+        }
+
+        function removeSplit(itemIdx, splitIdx) {
+            currentItems[itemIdx].splits.splice(splitIdx, 1);
+            renderItems();
+        }
+
+        function showTransfers() {
+            currentTransfer = null;
+            document.getElementById('transfersList').style.display = 'grid';
+            document.getElementById('transferDetails').style.display = 'none';
+        }
+
+        function showMsg(text, isError) {
+            const m = document.getElementById('msgBox');
+            m.className = 'msg ' + (isError ? 'error' : 'success');
+            m.innerText = text;
+            m.style.display = 'block';
+            window.scrollTo(0, 0);
+        }
+        function hideMsg() {
+            document.getElementById('msgBox').style.display = 'none';
+        }
+
+        async function saveSplits() {
+            hideMsg();
+            // Validation
+            for (let item of currentItems) {
+                let splitTotal = item.splits.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
+                if (splitTotal !== item.quantity) {
+                    showMsg('Error: Total split quantity for ' + item.product_variants.sku + ' does not match original quantity ('+item.quantity+').', true);
+                    return;
+                }
+                for (let split of item.splits) {
+                    if (!split.size && item.splits.length > 1) {
+                        showMsg('Error: Please enter a size for all splits of ' + item.product_variants.sku, true);
+                        return;
+                    }
+                }
+            }
+
+            const btn = document.getElementById('saveBtn');
+            btn.innerText = 'Saving... Please wait';
+            btn.disabled = true;
+
+            try {
+                for (let item of currentItems) {
+                    let originalVariant = item.product_variants;
+                    
+                    const { data: oldStock } = await sb.from('stock_levels').select('*').eq('variant_id', item.variant_id).eq('location_id', shoeGalleryLocationId).single();
+                    if (oldStock) {
+                        await sb.from('stock_levels').update({ quantity: oldStock.quantity - item.quantity }).eq('id', oldStock.id);
+                    }
+                    
+                    await sb.from('stock_movements').delete().eq('id', item.id);
+
+                    for (let split of item.splits) {
+                        let baseName = (originalVariant.products && originalVariant.products.name) ? originalVariant.products.name : originalVariant.sku;
+                        let newSku = baseName;
+                        if (split.size) newSku += split.size.trim().toUpperCase();
+                        if (split.colour) newSku += split.colour.trim().toUpperCase();
+                        newSku = newSku.replace(/\s+/g, '');
+
+                        let { data: existingVariant } = await sb.from('product_variants').select('*').eq('sku', newSku).single();
+                        let targetVariantId;
+
+                        if (existingVariant) {
+                            targetVariantId = existingVariant.id;
+                        } else {
+                            const { data: newVar, error: varErr } = await sb.from('product_variants').insert({
+                                product_id: originalVariant.product_id,
+                                sku: newSku,
+                                barcode: newSku,
+                                size: split.size ? split.size.trim().toUpperCase() : null,
+                                colour: split.colour ? split.colour.trim().toUpperCase() : null,
+                                selling_price: (originalVariant.products && originalVariant.products.selling_price) ? originalVariant.products.selling_price : 0,
+                                cost_price: (originalVariant.products && originalVariant.products.cost_price) ? originalVariant.products.cost_price : 0
+                            }).select().single();
+                            
+                            if (varErr) throw varErr;
+                            targetVariantId = newVar.id;
+                        }
+
+                        await sb.from('stock_movements').insert({
+                            variant_id: targetVariantId,
+                            from_location: null,
+                            to_location: shoeGalleryLocationId,
+                            quantity: split.qty,
+                            type: 'branch_transfer',
+                            reference_id: currentTransfer.id,
+                            created_by: item.created_by
+                        });
+                        
+                        const { data: splitStock } = await sb.from('stock_levels').select('*').eq('variant_id', targetVariantId).eq('location_id', shoeGalleryLocationId).single();
+                        if (splitStock) {
+                            await sb.from('stock_levels').update({ quantity: splitStock.quantity + split.qty }).eq('id', splitStock.id);
+                        } else {
+                            await sb.from('stock_levels').insert({
+                                variant_id: targetVariantId,
+                                location_id: shoeGalleryLocationId,
+                                quantity: split.qty
+                            });
+                        }
+                    }
+                }
+                
+                if (currentTransfer.status !== 'received') {
+                    await sb.from('transfers').update({ status: 'received' }).eq('id', currentTransfer.id);
+                }
+
+                showMsg('Transfer successfully split and stock updated!', false);
+                setTimeout(() => { loadTransfers(); }, 2000);
+
+            } catch(err) {
+                showMsg('Error saving splits: ' + err.message, true);
+            } finally {
+                btn.innerText = 'Confirm & Process Splits';
+                btn.disabled = false;
+            }
+        }
+
+        window.onload = loadTransfers;
+    </script>
+</body>
+</html>

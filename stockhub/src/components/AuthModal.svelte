@@ -67,9 +67,9 @@
       {/if}
 
       <div class="mb-5 flex items-center gap-3">
-        <div class="grid h-10 w-10 place-items-center rounded-xl bg-accent text-white"><Boxes class="h-5 w-5" /></div>
+        <div class="grid h-10 w-10 place-items-center rounded-xl bg-fg text-bg"><Boxes class="h-5 w-5" /></div>
         <div>
-          <div class="font-display text-lg font-semibold">FashionFeet Stock Hub</div>
+          <div class="font-display text-lg font-semibold text-fg">FashionFeet Stock Hub</div>
           <div class="text-xs text-dim">Branch stock transfer &amp; dispatch</div>
         </div>
       </div>
@@ -77,7 +77,7 @@
       <div class="mb-5 grid grid-cols-3 gap-1 rounded-xl bg-raised p-1">
         {#each tabs as t}
           <button
-            class="cursor-pointer rounded-lg py-1.5 text-sm font-medium transition {app.authTab === t.id ? 'bg-surface text-fg shadow-sm ring-1 ring-line' : 'text-muted hover:text-fg'}"
+            class="cursor-pointer rounded-lg py-1.5 text-xs font-medium transition {app.authTab === t.id ? 'bg-surface text-fg font-semibold shadow-xs ring-1 ring-line' : 'text-muted hover:text-fg'}"
             onclick={() => (app.authTab = t.id)}>{t.label}</button
           >
         {/each}
@@ -89,7 +89,7 @@
             {#each app.allStaff as s}
               <button
                 type="button"
-                class="chip cursor-pointer gap-1.5 transition hover:border-accent/60 {email.toLowerCase() === s.email.toLowerCase() ? 'border-accent text-accent' : ''}"
+                class="chip cursor-pointer gap-1.5 transition hover:border-fg/40 {email.toLowerCase() === s.email.toLowerCase() ? 'border-fg/60 bg-fg text-bg font-semibold' : ''}"
                 onclick={() => { email = s.email; password = ''; }}
                 title="{s.email} ({s.role ?? 'staff'})"
               >

@@ -4,12 +4,14 @@
 </script>
 
 <section class="space-y-4">
-  <header class="flex items-center gap-3">
-    <span class="grid size-9 place-items-center rounded-lg bg-accent-soft text-accent"><HistoryIcon class="size-5" /></span>
+  <header class="card flex items-center gap-3 p-4 sm:px-5">
+    <span class="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-raised text-fg">
+      <HistoryIcon class="size-4" />
+    </span>
     <div>
-      <h1 class="text-lg font-semibold text-fg">Transfer history</h1>
-      <p class="text-xs text-muted">Most recent 15 branch transfers. Open a slip to view or reprint.</p>
+      <h1 class="font-display text-base font-bold text-fg">Branch Transfer Audit History</h1>
+      <p class="text-xs text-dim">Most recent branch transfers · Open any record to inspect or reprint the 80mm thermal slip</p>
     </div>
   </header>
-  <TransferLog limit={15} />
+  <TransferLog limit={25} />
 </section>

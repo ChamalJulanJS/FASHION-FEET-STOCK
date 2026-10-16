@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import {
     PackageSearch, Search, X, Plus, Minus, ArrowLeftRight, Check, Share2,
-    FileDown, Printer, Copy, RotateCcw, AlertCircle, Sparkles, Trash2, MapPin
+    FileDown, Printer, Copy, RotateCcw, Sparkles, Trash2, MapPin
   } from 'lucide-svelte';
   import { app, fmtMoney } from '../../lib/app.svelte';
   import { reorder } from './store.svelte';
@@ -23,12 +23,11 @@
   const statusOptions = [
     { id: 'ALL', label: 'All Stock Levels (සියල්ල)' },
     { id: 'LOW_STOCK', label: 'Low Stock Only (Stock <= 2)' },
-    { id: 'ZERO_STOCK', label: 'Out of Stock Only (Stock = 0)' },
-    { id: 'IN_STOCK', label: 'In Stock Only (Stock > 0)' }
+    { id: 'OUT_OF_STOCK', label: 'Out of Stock Only (Stock = 0)' },
+    { id: 'IN_STOCK', label: 'Well Stocked (Stock >= 3)' }
   ];
 
   const matched = $derived.by(() => {
-    // Touch reactive properties
     app.syncVersion;
     reorder.resolveLocation();
     return getMatchingModels({
@@ -41,7 +40,7 @@
   });
 
   const models = $derived(matched.matchingModels);
-  const needsReorder = $derived(models.filter((m) => m.hasZeroStock || m.hasLowStock).length);
+  const needsReorder = $derived(matched.needsOrderCount);
 
   const sheetPairs = $derived(
     reorder.sheet.reduce((sum, it) => sum + it.variants.reduce((s, v) => s + (v.orderQty || 0), 0), 0)
@@ -55,26 +54,27 @@
   );
 </script>
 
-<div class="space-y-5">
-  <!-- Top Banner / Control Panel -->
-  <div class="card p-5">
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+<div class="space-y-4">
+  <!-- Top Control & Filter Bar -->
+  <div class="card p-4 sm:p-5">
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <div class="mb-1 flex items-center gap-2">
-          <span class="chip">STOCK &amp; REORDER MATRIX</span>
+        <div class="flex flex-wrap items-center gap-2">
+          <h1 class="font-display text-base font-bold tracking-tight text-fg sm:text-lg">
+            Footwear Stock Matrix &amp; Smart Reorder Hub
+          </h1>
           <span class="chip font-mono">{models.length} Styles</span>
-          <span class="chip text-warn font-mono">Needs Reorder: {needsReorder}</span>
+          <span class="chip font-mono {needsReorder > 0 ? 'text-warn' : 'text-muted'}">
+            0-Stock Sizes: {needsReorder}
+          </span>
         </div>
-        <h1 class="font-display text-xl font-bold tracking-tight text-fg">
-          Footwear Stock Matrix &amp; Smart Reorder Hub
-        </h1>
-        <p class="text-xs text-muted">
-          Check live branch stock by Brand, Category &amp; Article Code • Select codes to drop into Supplier Reorder Form
+        <p class="mt-0.5 text-xs text-dim">
+          Live branch stock by Brand, Category &amp; Article Code · Select models to build Supplier Purchase Orders or transfer stock
         </p>
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex flex-wrap items-center gap-2">
+      <!-- Export & Print Actions -->
+      <div class="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           class="btn btn-sm"
@@ -102,7 +102,7 @@
           title="Copy Current Stock summary for WhatsApp"
         >
           <Share2 class="h-3.5 w-3.5 text-muted" />
-          <span>WhatsApp</span>
+          <span>WhatsApp Summary</span>
         </button>
       </div>
     </div>
@@ -115,7 +115,7 @@
           <MapPin class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dim" />
           <select
             id="reorderBranchSelect"
-            class="input pl-8"
+            class="input h-9 pl-8 text-xs"
             value={reorder.locId}
             onchange={(e) => reorder.setLocation((e.target as HTMLSelectElement).value)}
           >
@@ -131,7 +131,7 @@
         <label class="label" for="reorderBrandSelect">Brand (වර්ගය)</label>
         <select
           id="reorderBrandSelect"
-          class="input"
+          class="input h-9 text-xs"
           bind:value={reorder.brand}
         >
           <option value="ALL">All Brands (සියලු Brands)</option>
@@ -145,7 +145,7 @@
         <label class="label" for="reorderCatSelect">Category (කාණ්ඩය)</label>
         <select
           id="reorderCatSelect"
-          class="input"
+          class="input h-9 text-xs"
           bind:value={reorder.cat}
         >
           <option value="ALL">All Categories (සියලු කාණ්ඩ)</option>
@@ -159,7 +159,7 @@
         <label class="label" for="reorderStatusSelect">Stock Status</label>
         <select
           id="reorderStatusSelect"
-          class="input"
+          class="input h-9 text-xs"
           bind:value={reorder.status}
         >
           {#each statusOptions as opt (opt.id)}
@@ -170,73 +170,79 @@
     </div>
 
     <!-- Search input -->
-    <div class="relative mt-3">
-      <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
+    <div class="relative mt-2.5">
+      <Search class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
       <input
         type="text"
-        class="input pl-9 pr-9"
-        placeholder="Search by Shoe Code, Article #, or Name (e.g. SFW006, AS8006, 032-16, RD015)..."
+        class="input h-9 pl-9 pr-9 text-xs"
+        placeholder="Search by Shoe Code, Article #, Brand, or Size (e.g. SFW006, AS8006, 032-16, RD015)..."
         bind:value={reorder.query}
       />
       {#if reorder.query}
         <button
           type="button"
-          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-dim hover:text-fg"
+          class="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer rounded p-0.5 text-dim hover:text-fg"
           onclick={() => (reorder.query = '')}
           aria-label="Clear search"
         >
-          <X class="h-4 w-4" />
+          <X class="h-3.5 w-3.5" />
         </button>
       {/if}
     </div>
   </div>
 
   <!-- Workspace 2-Column Grid -->
-  <div class="grid grid-cols-1 gap-5 lg:grid-cols-12">
-    <!-- Left Column: Catalog (7 cols on lg) -->
-    <div class="space-y-3.5 lg:col-span-7">
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
+    <!-- Left Column: Shoe Models Catalog (7 cols on lg) -->
+    <div class="space-y-3 lg:col-span-7">
       <div class="flex items-center justify-between px-1">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-muted">
-          Shoe Models &amp; Size Stock
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">
+          Shoe Models &amp; Size Matrix
         </h2>
-        <span class="text-xs text-dim">Showing {models.length} of {app.productsMap.size} styles</span>
+        <span class="font-mono text-[11px] text-dim">
+          Showing {models.length} of {app.productsMap.size} models
+        </span>
       </div>
 
       {#if models.length === 0}
         <div class="card p-10 text-center">
-          <PackageSearch class="mx-auto mb-2 h-10 w-10 text-dim" />
-          <p class="text-sm text-muted">No shoe models match the selected filters or search.</p>
+          <PackageSearch class="mx-auto mb-2 h-8 w-8 text-dim" />
+          <p class="text-xs font-medium text-fg">No shoe models match your current filters</p>
+          <p class="mt-1 text-[11px] text-dim">Try clearing the search query or switching the branch/status filter.</p>
         </div>
       {:else}
-        <div class="space-y-3">
+        <div class="space-y-2.5">
           {#each models as m (m.productId)}
             {@const inSheet = reorder.has(m.productId)}
-            <div class="card p-4 transition-all duration-150 {inSheet ? 'ring-1 ring-accent/40 bg-accent-soft/10' : ''}">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+            <div
+              class="card p-3.5 sm:p-4 transition-colors duration-150 {inSheet ? 'border-fg/40 bg-raised/40' : 'hover:border-fg/20'}"
+            >
+              <div class="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+                <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-1.5">
-                    <span class="chip text-xs font-semibold">{m.brand || 'GENERIC'}</span>
-                    <span class="text-xs text-dim">{m.category}</span>
+                    <span class="chip text-[10px] font-semibold uppercase text-fg">{m.brand || 'GENERIC'}</span>
+                    <span class="text-[11px] text-dim">{m.category}</span>
                     {#if m.gender}
-                      <span class="text-xs text-dim">• {m.gender}</span>
+                      <span class="text-[11px] text-dim">· {m.gender}</span>
                     {/if}
                   </div>
-                  <h3 class="mt-1 font-display text-base font-bold text-fg">
+                  <h3 class="mt-1 truncate font-display text-sm font-bold text-fg sm:text-base">
                     {m.name}
                   </h3>
-                  <div class="mt-0.5 text-xs text-muted">
-                    Sell: <strong class="text-fg">{fmtMoney(m.sellingPrice)}</strong>
+                  <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
+                    <span>Retail: <strong class="font-mono text-fg">{fmtMoney(m.sellingPrice)}</strong></span>
                     {#if m.costPrice}
-                      <span class="text-dim"> (Cost: {fmtMoney(m.costPrice)})</span>
+                      <span class="text-dim">· Cost: <span class="font-mono">{fmtMoney(m.costPrice)}</span></span>
                     {/if}
+                    <span class="text-dim">· Stock: <strong class="font-mono text-fg">{m.totalStock} prs</strong></span>
                   </div>
                 </div>
 
                 <!-- Card action buttons -->
-                <div class="flex items-center gap-2 pt-1 sm:pt-0">
+                <div class="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    class="btn btn-sm {inSheet ? 'border-accent bg-accent text-white hover:bg-accent-hover' : 'btn-primary'}"
+                    class="btn btn-sm {inSheet ? 'btn-primary' : ''}"
                     onclick={() => reorder.toggleCode(m.productId)}
                   >
                     {#if inSheet}
@@ -244,33 +250,37 @@
                       <span>In Sheet</span>
                     {:else}
                       <Plus class="h-3.5 w-3.5" />
-                      <span>Add to Reorder</span>
+                      <span>Reorder</span>
                     {/if}
                   </button>
 
                   <button
                     type="button"
-                    class="btn btn-sm"
+                    class="btn btn-sm text-muted hover:text-fg"
                     onclick={() => reorder.sendToTransfer(m.productId)}
                     title="Send available stock of this model to Transfer Batch"
                   >
-                    <ArrowLeftRight class="h-3.5 w-3.5 text-muted" />
+                    <ArrowLeftRight class="h-3.5 w-3.5 text-dim" />
                     <span>Transfer ({m.totalStock})</span>
                   </button>
                 </div>
               </div>
 
               <!-- Size Matrix Badges -->
-              <div class="mt-3.5 flex flex-wrap gap-1.5">
+              <div class="mt-3 flex flex-wrap gap-1.5">
                 {#each m.variants as v (v.id)}
                   {@const isZero = v.stock === 0}
                   {@const isLow = v.stock > 0 && v.stock <= 2}
                   <div
-                    class="flex flex-col items-center rounded-lg border px-2.5 py-1 text-center min-w-[48px]
-                      {isZero ? 'border-bad/30 bg-bad/5 text-bad' : isLow ? 'border-warn/30 bg-warn/5 text-warn' : 'border-line bg-raised text-fg'}"
+                    class="flex min-w-[46px] flex-col items-center rounded-md border px-2 py-1 text-center
+                      {isZero
+                        ? 'border-bad/25 bg-bad/5'
+                        : 'border-line bg-raised/60'}"
                   >
                     <span class="text-[10px] font-medium text-dim">Sz {v.displaySize}</span>
-                    <strong class="font-mono text-xs {isZero ? 'text-bad' : isLow ? 'text-warn' : 'text-fg'}">
+                    <strong
+                      class="font-mono text-xs {isZero ? 'text-bad' : isLow ? 'text-warn' : 'text-fg'}"
+                    >
                       {v.stock}
                     </strong>
                   </div>
@@ -282,75 +292,73 @@
       {/if}
     </div>
 
-    <!-- Right Column: Reorder Sheet (5 cols on lg) -->
-    <div class="space-y-3.5 lg:col-span-5">
+    <!-- Right Column: Sticky Reorder Sheet (5 cols on lg) -->
+    <div class="space-y-3 lg:col-span-5 lg:sticky lg:top-18">
       <div class="flex items-center justify-between px-1">
         <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted">
-            Reorder Sheet
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">
+            Supplier Reorder Sheet
           </h2>
-          <span class="chip font-mono">{reorder.sheet.length} Models • {sheetPairs} Pairs</span>
+          <span class="chip font-mono">{reorder.sheet.length} Models · {sheetPairs} Pairs</span>
         </div>
 
         {#if reorder.sheet.length > 0}
-          <div class="flex items-center gap-1.5">
-            <button
-              type="button"
-              class="btn btn-sm btn-ghost text-xs text-dim hover:text-bad"
-              onclick={() => reorder.clearSheet()}
-              title="Clear all models from sheet"
-            >
-              <Trash2 class="h-3.5 w-3.5" />
-              <span>Clear</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost h-7 px-2 text-xs text-dim hover:text-bad"
+            onclick={() => reorder.clearSheet()}
+            title="Clear all models from sheet"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+            <span>Clear</span>
+          </button>
         {/if}
       </div>
 
       {#if reorder.sheet.length === 0}
         <div class="card p-8 text-center">
-          <PackageSearch class="mx-auto mb-2.5 h-10 w-10 text-dim" />
-          <h3 class="text-sm font-semibold text-fg">Reorder Sheet is Empty</h3>
-          <p class="mt-1 text-xs text-muted">
-            Click <strong>"+ Add to Reorder"</strong> on any shoe model on the left to add sizes and quantities.
+          <PackageSearch class="mx-auto mb-2 h-8 w-8 text-dim" />
+          <h3 class="text-xs font-semibold text-fg">Reorder Sheet is Empty</h3>
+          <p class="mt-1 text-[11px] text-dim">
+            Click <strong class="text-muted">+ Reorder</strong> on any shoe model on the left to add sizes and quantities.
           </p>
         </div>
       {:else}
-        <div class="space-y-3">
+        <div class="space-y-2.5">
           {#each reorder.sheet as it (it.productId)}
             {@const modelTotal = it.variants.reduce((s, v) => s + (v.orderQty || 0), 0)}
-            <div id={`sheetItem_${it.productId}`} class="card p-4">
+            <div id={`sheetItem_${it.productId}`} class="card p-3.5">
               <div class="flex items-start justify-between gap-2 border-b border-line pb-2.5">
-                <div>
+                <div class="min-w-0">
                   <div class="flex items-center gap-1.5">
-                    <span class="chip text-[10px] font-semibold">{it.brand || 'GENERIC'}</span>
+                    <span class="chip text-[10px] font-semibold uppercase text-fg">{it.brand || 'GENERIC'}</span>
                     <span class="text-[11px] text-dim">{it.category}</span>
                   </div>
-                  <h4 class="mt-0.5 font-display text-sm font-bold text-fg">{it.name}</h4>
-                  <div class="text-[11px] text-muted">
+                  <h4 class="mt-0.5 truncate font-display text-sm font-bold text-fg">{it.name}</h4>
+                  <div class="font-mono text-[11px] text-muted">
                     Sell: {fmtMoney(it.sellingPrice)}
                     {#if it.costPrice}
-                      <span class="text-dim">• Cost: {fmtMoney(it.costPrice)}</span>
+                      <span class="text-dim"> · Cost: {fmtMoney(it.costPrice)}</span>
                     {/if}
-                    • Total: <strong class="text-accent">{modelTotal} prs</strong>
+                    · Order: <strong class="text-fg">{modelTotal} prs</strong>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  class="btn btn-ghost btn-sm text-dim hover:text-bad p-1 h-7 w-7"
+                  class="btn btn-ghost btn-sm size-7 p-0 text-dim hover:text-bad"
                   onclick={() => reorder.removeCode(it.productId)}
                   aria-label="Remove model"
                 >
-                  <X class="h-4 w-4" />
+                  <X class="h-3.5 w-3.5" />
                 </button>
               </div>
 
               <!-- Model Quick Tools -->
-              <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <div class="mt-2 flex flex-wrap items-center gap-1">
                 <button
                   type="button"
-                  class="chip cursor-pointer hover:border-accent hover:text-accent"
+                  class="chip cursor-pointer hover:border-fg/40 hover:text-fg"
                   onclick={() => (activeAddSizeProductId = it.productId)}
                 >
                   <Plus class="h-3 w-3" />
@@ -359,7 +367,7 @@
 
                 <button
                   type="button"
-                  class="chip cursor-pointer hover:border-accent hover:text-accent"
+                  class="chip cursor-pointer hover:border-fg/40 hover:text-fg"
                   onclick={() => reorder.fillZeroStock(it.productId, 3)}
                   title="Set 3 pairs for all 0-stock sizes"
                 >
@@ -369,7 +377,7 @@
 
                 <button
                   type="button"
-                  class="chip cursor-pointer hover:border-accent hover:text-accent"
+                  class="chip cursor-pointer hover:border-fg/40 hover:text-fg"
                   onclick={() => reorder.fillCurrentStock(it.productId)}
                   title="Match current stock quantities"
                 >
@@ -378,7 +386,7 @@
 
                 <button
                   type="button"
-                  class="chip cursor-pointer hover:border-accent hover:text-accent"
+                  class="chip cursor-pointer hover:border-fg/40 hover:text-fg"
                   onclick={() => reorder.addOneAll(it.productId)}
                   title="Add +1 to all sizes"
                 >
@@ -387,42 +395,42 @@
 
                 <button
                   type="button"
-                  class="chip cursor-pointer hover:border-bad hover:text-bad"
+                  class="chip cursor-pointer hover:border-bad/50 hover:text-bad"
                   onclick={() => reorder.zeroAll(it.productId)}
                   title="Reset all quantities to 0"
                 >
                   <RotateCcw class="h-3 w-3" />
-                  <span>Zero All</span>
+                  <span>Zero</span>
                 </button>
               </div>
 
               <!-- Sizes Table -->
-              <div class="mt-3 overflow-x-auto">
+              <div class="mt-2.5 overflow-x-auto">
                 <table class="w-full text-xs">
                   <thead>
-                    <tr class="border-b border-line text-dim">
-                      <th class="py-1.5 text-left font-medium">Size</th>
-                      <th class="py-1.5 text-center font-medium">Stock</th>
-                      <th class="py-1.5 text-right font-medium">Order Qty</th>
+                    <tr class="border-b border-line text-[10px] uppercase tracking-wider text-dim">
+                      <th class="py-1.5 text-left font-semibold">Size</th>
+                      <th class="py-1.5 text-center font-semibold">Stock</th>
+                      <th class="py-1.5 text-right font-semibold">Order Qty</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-line/40">
+                  <tbody class="divide-y divide-line/50">
                     {#each it.variants as v (v.variantId)}
                       <tr>
-                        <td class="py-2 font-medium text-fg">
+                        <td class="py-1.5 font-medium text-fg">
                           Sz {v.displaySize || v.size}
                           {#if v.isCustom}
-                            <span class="ml-1 rounded bg-accent/20 px-1 py-0.5 text-[9px] text-accent">Custom</span>
+                            <span class="ml-1 rounded border border-line bg-raised px-1 py-0.5 text-[9px] text-muted">Custom</span>
                           {/if}
                         </td>
-                        <td class="py-2 text-center font-mono {v.currentStock === 0 ? 'text-bad' : 'text-muted'}">
+                        <td class="py-1.5 text-center font-mono {v.currentStock === 0 ? 'text-bad font-semibold' : 'text-muted'}">
                           {v.currentStock}
                         </td>
-                        <td class="py-2 text-right">
+                        <td class="py-1.5 text-right">
                           <div class="inline-flex items-center gap-1">
                             <button
                               type="button"
-                              class="grid h-7 w-7 place-items-center rounded border border-line bg-raised text-muted hover:border-accent hover:text-fg"
+                              class="grid h-6 w-6 cursor-pointer place-items-center rounded border border-line bg-raised text-muted hover:border-fg/40 hover:text-fg"
                               onclick={() => reorder.stepQty(it.productId, v.variantId, -1)}
                               aria-label="Decrease quantity"
                             >
@@ -431,13 +439,13 @@
                             <input
                               type="number"
                               min="0"
-                              class="input h-7 w-12 text-center font-mono font-semibold p-0 text-xs"
+                              class="input h-6 w-12 p-0 text-center font-mono text-xs font-semibold"
                               value={v.orderQty}
                               oninput={(e) => reorder.setQty(it.productId, v.variantId, (e.target as HTMLInputElement).value)}
                             />
                             <button
                               type="button"
-                              class="grid h-7 w-7 place-items-center rounded border border-line bg-raised text-muted hover:border-accent hover:text-fg"
+                              class="grid h-6 w-6 cursor-pointer place-items-center rounded border border-line bg-raised text-muted hover:border-fg/40 hover:text-fg"
                               onclick={() => reorder.stepQty(it.productId, v.variantId, 1)}
                               aria-label="Increase quantity"
                             >
@@ -446,7 +454,7 @@
                             {#if v.isCustom}
                               <button
                                 type="button"
-                                class="ml-1 text-dim hover:text-bad p-1"
+                                class="ml-0.5 cursor-pointer p-1 text-dim hover:text-bad"
                                 onclick={() => reorder.removeCustomSize(it.productId, v.variantId)}
                                 title="Remove custom size"
                               >
@@ -462,75 +470,75 @@
               </div>
             </div>
           {/each}
+        </div>
 
-          <!-- Order Notes & Summary Card -->
-          <div class="card p-4 space-y-3">
-            <div>
-              <label class="label" for="reorderNotesArea">Order Notes (සටහන්)</label>
-              <textarea
-                id="reorderNotesArea"
-                class="input min-h-[64px] resize-y text-xs"
-                placeholder="e.g. Urgent delivery needed by Friday; please confirm packing."
-                bind:value={reorder.notes}
-              ></textarea>
+        <!-- Order Notes & Export Card -->
+        <div class="card p-3.5 space-y-3">
+          <div>
+            <label class="label" for="reorderNotesArea">Supplier Order Notes (සටහන්)</label>
+            <textarea
+              id="reorderNotesArea"
+              class="input min-h-[54px] resize-y text-xs"
+              placeholder="e.g. Urgent delivery needed by Friday; please confirm packing."
+              bind:value={reorder.notes}
+            ></textarea>
+          </div>
+
+          <!-- Totals -->
+          <div class="rounded-lg border border-line bg-raised/60 p-2.5 text-xs space-y-1">
+            <div class="flex justify-between text-muted">
+              <span>Total Shoe Styles:</span>
+              <strong class="font-mono text-fg">{reorder.sheet.length} Styles</strong>
             </div>
-
-            <!-- Totals -->
-            <div class="rounded-xl bg-raised p-3 text-xs space-y-1">
+            <div class="flex justify-between text-muted">
+              <span>Total Order Quantity:</span>
+              <strong class="font-mono text-fg text-sm">{sheetPairs} Pairs</strong>
+            </div>
+            {#if sheetCost > 0}
               <div class="flex justify-between text-muted">
-                <span>Total Shoe Styles:</span>
-                <strong class="font-mono text-fg">{reorder.sheet.length} Styles</strong>
+                <span>Est. Wholesale Cost:</span>
+                <strong class="font-mono text-fg">{fmtMoney(sheetCost)}</strong>
               </div>
-              <div class="flex justify-between text-muted">
-                <span>Total Quantity:</span>
-                <strong class="font-mono text-accent text-sm">{sheetPairs} Pairs</strong>
-              </div>
-              {#if sheetCost > 0}
-                <div class="flex justify-between text-muted">
-                  <span>Est. Wholesale Cost:</span>
-                  <strong class="font-mono text-fg">{fmtMoney(sheetCost)}</strong>
-                </div>
-              {/if}
-            </div>
+            {/if}
+          </div>
 
-            <!-- Action buttons -->
-            <div class="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                class="btn btn-primary"
-                onclick={() => reorder.copyWhatsAppOrder()}
-              >
-                <Copy class="h-4 w-4" />
-                <span>Copy WhatsApp</span>
-              </button>
+          <!-- Action buttons -->
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              class="btn btn-primary h-9"
+              onclick={() => reorder.copyWhatsAppOrder()}
+            >
+              <Copy class="h-3.5 w-3.5" />
+              <span>Copy WhatsApp</span>
+            </button>
 
-              <button
-                type="button"
-                class="btn"
-                onclick={() => reorder.directWhatsAppOrder()}
-              >
-                <Share2 class="h-4 w-4" />
-                <span>Open WhatsApp</span>
-              </button>
+            <button
+              type="button"
+              class="btn h-9"
+              onclick={() => reorder.directWhatsAppOrder()}
+            >
+              <Share2 class="h-3.5 w-3.5" />
+              <span>Open WhatsApp</span>
+            </button>
 
-              <button
-                type="button"
-                class="btn"
-                onclick={() => reorder.printPO()}
-              >
-                <Printer class="h-4 w-4" />
-                <span>Print Order Slip</span>
-              </button>
+            <button
+              type="button"
+              class="btn h-9"
+              onclick={() => reorder.printPO()}
+            >
+              <Printer class="h-3.5 w-3.5" />
+              <span>Print PO Slip</span>
+            </button>
 
-              <button
-                type="button"
-                class="btn"
-                onclick={() => reorder.exportCSV()}
-              >
-                <FileDown class="h-4 w-4" />
-                <span>CSV / Excel</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              class="btn h-9"
+              onclick={() => reorder.exportCSV()}
+            >
+              <FileDown class="h-3.5 w-3.5" />
+              <span>CSV / Excel</span>
+            </button>
           </div>
         </div>
       {/if}

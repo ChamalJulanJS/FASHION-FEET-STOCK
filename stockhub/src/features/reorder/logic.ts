@@ -91,7 +91,8 @@ export function countOptions(kind: 'brand' | 'category') {
 }
 
 export function getMatchingModels(f: StockFilters) {
-  const { brand, cat, status, query: q, locId } = f;
+  const { brand, cat, status, locId } = f;
+  const q = (f.query || '').trim().toLowerCase();
   const matchingModels: MatchModel[] = [];
   let needsOrderCount = 0;
 
@@ -134,7 +135,7 @@ export function getMatchingModels(f: StockFilters) {
 
     if (hasZeroStock) needsOrderCount++;
 
-    if (status === 'OUT_OF_STOCK' && !hasZeroStock) continue;
+    if ((status === 'OUT_OF_STOCK' || status === 'ZERO_STOCK') && !hasZeroStock) continue;
     if (status === 'LOW_STOCK' && !hasLowStock) continue;
     if (status === 'IN_STOCK' && hasLowStock) continue;
 

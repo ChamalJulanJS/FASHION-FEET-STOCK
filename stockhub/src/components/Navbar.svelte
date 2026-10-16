@@ -1,17 +1,19 @@
 <script lang="ts">
   import { app, type HubTab } from '../lib/app.svelte';
   import {
-    Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, Zap, RefreshCw, Sun, Moon, Volume2, VolumeX,
+    Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
     Download, User, ChevronDown, Users, KeyRound, LogOut,
   } from 'lucide-svelte';
 
   let menuOpen = $state(false);
 
   const tabs: { id: HubTab; label: string; icon: any }[] = [
-    { id: 'transfer', label: 'New Transfer', icon: ArrowLeftRight },
+    { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
     { id: 'reorder', label: 'Stock & Reorder', icon: PackageSearch },
-    { id: 'history', label: 'Transfer History', icon: History },
+    { id: 'history', label: 'History', icon: History },
   ];
+
+  const cartCount = $derived(app.cart.reduce((n, l) => n + l.qty, 0));
 
   async function install() {
     const p = app.deferredPwaPrompt;
@@ -29,102 +31,176 @@
   const dot = $derived(
     app.connStatus === 'connected' ? 'bg-ok' : app.connStatus === 'error' ? 'bg-bad' : 'bg-warn animate-pulse',
   );
+  const compactStatus = $derived(
+    app.isSyncing
+      ? 'Syncing...'
+      : app.connStatus === 'connected'
+        ? `${app.catalog.length.toLocaleString()} SKUs`
+        : app.connStatus === 'error'
+          ? 'Offline'
+          : 'Connecting...',
+  );
 </script>
 
 <svelte:window onclick={() => (menuOpen = false)} />
 
-<header class="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
-  <div class="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4 md:px-6">
-    <div class="flex items-center gap-2.5">
-      <div class="grid h-8 w-8 place-items-center rounded-lg bg-accent text-white"><Boxes class="h-4 w-4" /></div>
-      <div class="leading-tight">
-        <div class="font-display text-[15px] font-semibold tracking-tight">
-          Fashion<span class="text-accent">Feet</span>
+<header class="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur-md">
+  <div class="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-3 px-4 md:px-6">
+    <!-- Brand + Primary Navigation -->
+    <div class="flex items-center gap-4 min-w-0">
+      <button
+        type="button"
+        class="flex items-center gap-2.5 text-left whitespace-nowrap shrink-0 cursor-pointer focus:outline-none"
+        onclick={() => (app.tab = 'transfer')}
+      >
+        <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-fg text-bg shadow-xs">
+          <Boxes class="h-4 w-4" />
         </div>
-        <div class="hidden text-[10px] uppercase tracking-widest text-dim sm:block">Stock Hub</div>
-      </div>
+        <div class="leading-none">
+          <div class="font-display text-sm font-bold tracking-tight text-fg">
+            FashionFeet
+          </div>
+          <div class="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-dim">
+            Stock Hub
+          </div>
+        </div>
+      </button>
+
+      <div class="hidden h-5 w-px bg-line md:block"></div>
+
+      <nav class="hidden items-center gap-1 rounded-lg border border-line bg-surface p-1 md:flex" aria-label="Primary">
+        {#each tabs as t}
+          {@const Icon = t.icon}
+          {@const active = app.tab === t.id}
+          <button
+            type="button"
+            class="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition
+              {active ? 'bg-fg text-bg font-semibold shadow-xs' : 'text-muted hover:bg-raised hover:text-fg'}"
+            onclick={() => (app.tab = t.id)}
+            aria-current={active ? 'page' : undefined}
+          >
+            <Icon class="h-3.5 w-3.5 shrink-0" />
+            <span>{t.label}</span>
+            {#if t.id === 'transfer' && cartCount > 0}
+              <span
+                class="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[10px] font-bold
+                  {active ? 'bg-bg text-fg' : 'bg-fg text-bg'}"
+              >
+                {cartCount}
+              </span>
+            {/if}
+          </button>
+        {/each}
+        <a
+          href="transfer_receiver.html"
+          class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted whitespace-nowrap shrink-0 transition hover:bg-raised hover:text-fg"
+          title="Open Transfer Receiver to split generic sizes"
+        >
+          <PackageCheck class="h-3.5 w-3.5 shrink-0" />
+          <span>Size Receiver</span>
+        </a>
+      </nav>
     </div>
 
-    <nav class="ml-4 hidden items-center gap-1 md:flex" aria-label="Primary">
-      {#each tabs as t}
-        {@const Icon = t.icon}
-        <button
-          class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition
-            {app.tab === t.id ? 'bg-raised text-fg ring-1 ring-line' : 'text-muted hover:bg-raised/60 hover:text-fg'}"
-          onclick={() => (app.tab = t.id)}
-          aria-current={app.tab === t.id ? 'page' : undefined}
-        >
-          <Icon class="h-4 w-4" />{t.label}
-        </button>
-      {/each}
-      <a
-        href="transfer_receiver.html"
-        class="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition hover:bg-raised/60 hover:text-fg"
-        title="Open Transfer Receiver to split generic sizes"
+    <!-- Right Utilities -->
+    <div class="flex items-center gap-1.5 shrink-0">
+      <button
+        type="button"
+        class="btn btn-sm gap-2 text-muted hover:text-fg"
+        onclick={() => app.syncCatalogAndStock()}
+        disabled={app.isSyncing}
+        title="{app.connText} — Click to sync catalog & stock"
       >
-        <PackageCheck class="h-4 w-4" />Size Receiver
-      </a>
-    </nav>
-
-    <div class="ml-auto flex items-center gap-1.5">
-      <div class="mr-1 hidden items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted lg:flex" title="Live Supabase Cloud POS Status">
-        <span class="h-2 w-2 rounded-full {dot}"></span>{app.connText}
-      </div>
+        <span class="h-2 w-2 shrink-0 rounded-full {dot}"></span>
+        <span class="hidden font-mono text-[11px] sm:inline">{compactStatus}</span>
+        <RefreshCw class="h-3.5 w-3.5 shrink-0 text-dim {app.isSyncing ? 'animate-spin text-fg' : ''}" />
+      </button>
 
       {#if app.deferredPwaPrompt}
-        <button class="btn btn-sm hidden sm:inline-flex" onclick={install}><Download class="h-3.5 w-3.5" />Install</button>
+        <button class="btn btn-sm hidden sm:inline-flex" onclick={install}>
+          <Download class="h-3.5 w-3.5" />
+          <span>Install</span>
+        </button>
       {/if}
 
       <button
-        class="btn btn-sm {app.autoScan ? 'border-accent/40 bg-accent-soft text-accent' : 'text-muted'}"
-        onclick={() => (app.autoScan = !app.autoScan)}
-        title="Toggle auto-add when scanning barcodes"
-        aria-pressed={app.autoScan}
+        type="button"
+        class="btn btn-ghost btn-sm w-8 p-0"
+        onclick={() => app.toggleTheme()}
+        title="Switch theme ({app.theme === 'dark' ? 'Light mode' : 'Dark mode'})"
+        aria-label="Switch theme"
       >
-        <Zap class="h-3.5 w-3.5" />
-        <span class="hidden xl:inline">Instant Scan: <strong>{app.autoScan ? 'ON' : 'OFF'}</strong></span>
-      </button>
-
-      <button class="btn btn-ghost btn-sm" onclick={() => app.syncCatalogAndStock()} title="Refresh catalog & stock" aria-label="Refresh catalog and stock">
-        <RefreshCw class="h-4 w-4 {app.isSyncing ? 'animate-spin' : ''}" />
-      </button>
-      <button class="btn btn-ghost btn-sm" onclick={() => app.toggleTheme()} title="Switch theme" aria-label="Switch theme">
         {#if app.theme === 'dark'}<Sun class="h-4 w-4" />{:else}<Moon class="h-4 w-4" />{/if}
       </button>
-      <button class="btn btn-ghost btn-sm" onclick={() => app.toggleSound()} title="Sound effects" aria-label="Toggle sound">
+
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm w-8 p-0"
+        onclick={() => app.toggleSound()}
+        title="Sound effects: {app.soundEnabled ? 'On' : 'Off'}"
+        aria-label="Toggle sound"
+      >
         {#if app.soundEnabled}<Volume2 class="h-4 w-4" />{:else}<VolumeX class="h-4 w-4 text-dim" />{/if}
       </button>
 
       <div class="relative">
         <button
-          class="btn btn-sm gap-2"
+          type="button"
+          class="btn btn-sm gap-2 pl-2.5 pr-2"
           onclick={(e) => { e.stopPropagation(); menuOpen = !menuOpen; }}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
-          <User class="h-4 w-4" />
-          <span class="hidden text-left leading-tight sm:block">
-            <span class="block max-w-[110px] truncate text-xs font-semibold">{app.currentUser?.name ?? 'Sign in'}</span>
-            <span class="block text-[10px] uppercase text-dim">{app.currentUser?.role ?? ''}</span>
+          <User class="h-3.5 w-3.5 shrink-0 text-muted" />
+          <span class="hidden max-w-[120px] truncate text-xs font-medium text-fg sm:inline">
+            {app.currentUser?.name ?? 'Sign in'}
           </span>
-          <ChevronDown class="h-3.5 w-3.5 text-dim" />
+          <ChevronDown class="h-3.5 w-3.5 shrink-0 text-dim" />
         </button>
+
         {#if menuOpen}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div class="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface shadow-xl shadow-black/30" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+          <div
+            class="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface shadow-xl shadow-black/30"
+            role="menu"
+            tabindex="-1"
+            onclick={(e) => e.stopPropagation()}
+          >
             <div class="border-b border-line px-4 py-3">
-              <div class="text-sm font-semibold">{app.currentUser?.name ?? 'Not signed in'}</div>
-              <div class="truncate text-xs text-dim">{app.currentUser?.email ?? 'Please log in to continue'}</div>
+              <div class="flex items-center justify-between gap-2">
+                <div class="truncate text-xs font-semibold text-fg">{app.currentUser?.name ?? 'Not signed in'}</div>
+                {#if app.currentUser?.role}
+                  <span class="chip text-[10px] uppercase">{app.currentUser.role}</span>
+                {/if}
+              </div>
+              <div class="mt-0.5 truncate font-mono text-[11px] text-dim">
+                {app.currentUser?.email ?? 'Please log in to continue'}
+              </div>
             </div>
             <div class="p-1.5">
-              <button class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-raised" onclick={() => { menuOpen = false; app.staffManagerOpen = true; }}>
-                <Users class="h-4 w-4 text-muted" />Manage staff accounts
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-fg hover:bg-raised"
+                onclick={() => { menuOpen = false; app.staffManagerOpen = true; }}
+              >
+                <Users class="h-3.5 w-3.5 text-muted" />
+                <span>Manage staff accounts</span>
               </button>
-              <button class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-raised" onclick={openReset}>
-                <KeyRound class="h-4 w-4 text-muted" />Reset password
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-fg hover:bg-raised"
+                onclick={openReset}
+              >
+                <KeyRound class="h-3.5 w-3.5 text-muted" />
+                <span>Reset password</span>
               </button>
-              <button class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-bad hover:bg-raised" onclick={() => { menuOpen = false; app.logout(); }}>
-                <LogOut class="h-4 w-4" />Sign out
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-bad hover:bg-raised"
+                onclick={() => { menuOpen = false; app.logout(); }}
+              >
+                <LogOut class="h-3.5 w-3.5" />
+                <span>Sign out</span>
               </button>
             </div>
           </div>

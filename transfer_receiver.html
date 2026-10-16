@@ -3,53 +3,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Branch Transfer Receiver</title>
+    <title>FashionFeet Stock Hub · Size Receiver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      if (localStorage.getItem('ff_theme') === 'light') {
+        document.documentElement.classList.add('light');
+      }
+    </script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f4f6; padding: 20px; color: #333; }
-        .container { max-width: 1100px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #1d4ed8; font-size: 24px; margin-bottom: 5px; }
-        p.sub { color: #6b7280; margin-bottom: 20px; }
-        .card { border: 1px solid #e5e7eb; padding: 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; background: #fff; }
-        .card:hover { border-color: #3b82f6; background: #eff6ff; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
-        .status { font-weight: bold; text-transform: uppercase; font-size: 12px; }
-        .received { color: #059669; } .pending { color: #d97706; }
+        :root {
+            --bg: #09090b;
+            --surface: #111114;
+            --raised: #18181c;
+            --line: rgba(255, 255, 255, 0.08);
+            --fg: #fafafa;
+            --muted: #a1a1aa;
+            --dim: #71717a;
+            --ok: #10b981;
+            --warn: #f59e0b;
+            --bad: #ef4444;
+        }
+        :root.light {
+            --bg: #f7f7f8;
+            --surface: #ffffff;
+            --raised: #f1f2f4;
+            --line: rgba(24, 24, 27, 0.09);
+            --fg: #09090b;
+            --muted: #52525b;
+            --dim: #71717a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            border-bottom: 1px solid var(--line);
+            background: var(--surface);
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: var(--fg);
+        }
+        .brand-mark {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: var(--fg);
+            color: var(--bg);
+            display: grid;
+            place-items: center;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 14px; line-height: 1.1; }
+        .brand-sub { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
+        .header-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        h1 { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 700; margin: 0 0 4px; color: var(--fg); }
+        p.sub { color: var(--dim); font-size: 12px; margin: 0; }
+        .card {
+            border: 1px solid var(--line);
+            padding: 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            background: var(--surface);
+        }
+        .card:hover { border-color: var(--muted); background: var(--raised); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            border: 1px solid var(--line);
+        }
+        .received { color: var(--ok); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08); }
+        .pending { color: var(--warn); border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.08); }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
-        th { background: #f9fafb; font-size: 14px; }
-        input { padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 100%; box-sizing: border-box; }
-        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-add { background: #e5e7eb; color: #374151; font-size: 12px; margin-top: 10px; }
-        .btn-add:hover { background: #d1d5db; }
-        .btn-remove { color: #ef4444; background: none; text-decoration: underline; padding: 0; }
-        .btn-save { background: #2563eb; color: #fff; padding: 12px 20px; font-size: 16px; width: 100%; margin-top: 20px; }
-        .btn-save:hover { background: #1d4ed8; }
-        .btn-back { background: none; color: #2563eb; border: none; cursor: pointer; text-decoration: underline; margin-bottom: 15px; font-size: 14px; padding: 0; }
-        .item-box { border: 1px solid #e5e7eb; padding: 15px; border-radius: 6px; margin-bottom: 20px; background: #fdfdfd; }
-        .item-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
-        .msg { padding: 10px; border-radius: 4px; margin-bottom: 15px; display: none; }
-        .error { background: #fee2e2; color: #b91c1c; }
-        .success { background: #d1fae5; color: #047857; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 12px; }
+        th { background: var(--raised); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); font-weight: 600; }
+        input {
+            padding: 7px 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            width: 100%;
+            background: var(--raised);
+            color: var(--fg);
+            font-size: 12px;
+            outline: none;
+        }
+        input:focus { border-color: var(--muted); }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 7px 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--raised);
+            color: var(--fg);
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 12px;
+            text-decoration: none;
+            transition: 0.15s;
+        }
+        .btn:hover { border-color: var(--muted); }
+        .btn-primary { background: var(--fg); color: var(--bg); border-color: transparent; font-weight: 600; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-add { margin-top: 10px; font-size: 11px; }
+        .btn-remove { color: var(--bad); background: transparent; border-color: transparent; padding: 4px 8px; }
+        .btn-remove:hover { background: rgba(239, 68, 68, 0.1); border-color: transparent; }
+        .btn-save { width: 100%; padding: 11px 20px; font-size: 13px; margin-top: 16px; }
+        .btn-back { margin-bottom: 14px; }
+        .item-box {
+            border: 1px solid var(--line);
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            background: var(--surface);
+        }
+        .item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+        .msg { padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; display: none; font-size: 12px; font-weight: 500; border: 1px solid var(--line); }
+        .error { background: rgba(239, 68, 68, 0.1); color: var(--bad); border-color: rgba(239, 68, 68, 0.3); }
+        .success { background: rgba(16, 185, 129, 0.1); color: var(--ok); border-color: rgba(16, 185, 129, 0.3); }
+        .mono { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
 <body>
+    <header class="topbar">
+        <a href="index.html" class="brand">
+            <div class="brand-mark">FF</div>
+            <div>
+                <div class="brand-title">FashionFeet</div>
+                <div class="brand-sub">Size Receiver</div>
+            </div>
+        </a>
+        <a href="index.html" class="btn">← Back to Stock Hub</a>
+    </header>
+
     <div class="container">
-        <a href="index.html" style="float: right; text-decoration: none; background: #4f46e5; color: white; padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 13px;">📦 Open Transfer Hub (Send)</a>
-        <h1>🚚 Branch Transfer Receiver (Split by Size)</h1>
-        <p class="sub">Select a branch transfer below to split generic items into size-specific items.</p>
+        <div class="header-card">
+            <div>
+                <h1>Branch Transfer Receiver · Split by Size</h1>
+                <p class="sub">Select an incoming branch transfer below to split generic footwear items into size-specific stock variants.</p>
+            </div>
+            <button class="btn" onclick="loadTransfers()">Refresh Transfers</button>
+        </div>
         
         <div id="msgBox" class="msg"></div>
-        <div id="loading" style="color: #2563eb; font-weight: bold;">Loading data from database...</div>
+        <div id="loading" style="color: var(--muted); font-size: 12px; padding: 24px 0; text-align: center;">Connecting to Supabase transfer records...</div>
         
         <div id="transfersList" class="grid" style="display: none;"></div>
         
         <div id="transferDetails" style="display: none;">
-            <button class="btn-back" onclick="showTransfers()">← Back to Transfers</button>
-            <h2 style="border-bottom: 2px solid #eee; padding-bottom: 10px;">Transfer Items</h2>
-            <div id="itemsLoading" style="color: #2563eb;">Loading transfer items...</div>
+            <button class="btn btn-back" onclick="showTransfers()">← Back to All Transfers</button>
+            <div id="itemsLoading" style="color: var(--muted); font-size: 12px; padding: 16px 0;">Loading transfer items...</div>
             <div id="itemsContainer"></div>
-            <button id="saveBtn" class="btn btn-save" onclick="saveSplits()">Confirm & Process Splits</button>
+            <button id="saveBtn" class="btn btn-primary btn-save" onclick="saveSplits()">Confirm &amp; Process Size Splits</button>
         </div>
     </div>
 
@@ -85,12 +232,15 @@
             data.forEach(t => {
                 let div = document.createElement('div');
                 div.className = 'card';
-                let dateStr = new Date(t.created_at).toLocaleDateString();
+                let dateStr = new Date(t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
                 let statusClass = t.status === 'received' ? 'received' : 'pending';
+                let shortId = t.id ? '#' + t.id.slice(0, 8).toUpperCase() : 'Transfer';
                 div.innerHTML = `
-                    <div style="font-weight: bold; font-size: 16px;">Transfer</div>
-                    <div style="color: #6b7280; font-size: 14px;">Date: ${dateStr}</div>
-                    <div style="color: #6b7280; font-size: 14px;">Status: <span class="status ${statusClass}">${t.status}</span></div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="mono" style="font-weight: 600; font-size: 13px; color: var(--fg);">${shortId}</span>
+                        <span class="status ${statusClass}">${t.status}</span>
+                    </div>
+                    <div class="mono" style="color: var(--muted); font-size: 11px;">Date: ${dateStr}</div>
                 `;
                 div.onclick = () => selectTransfer(t);
                 list.appendChild(div);
@@ -138,7 +288,7 @@
                 let name = (item.product_variants.products && item.product_variants.products.name) ? item.product_variants.products.name : item.product_variants.sku;
                 
                 let splitTotal = item.splits.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
-                let totalColor = splitTotal === item.quantity ? '#059669' : '#dc2626';
+                let totalColor = splitTotal === item.quantity ? 'var(--ok)' : 'var(--bad)';
 
                 let box = document.createElement('div');
                 box.className = 'item-box';
@@ -146,10 +296,10 @@
                 let header = `
                     <div class="item-header">
                         <div>
-                            <div style="font-weight: bold; color: #1e40af; font-size: 18px;">${name}</div>
-                            <div style="font-size: 13px; color: #6b7280;">Original SKU: ${item.product_variants.sku} | Transferred: <b style="color:#000;">${item.quantity}</b></div>
+                            <div style="font-weight: 700; color: var(--fg); font-size: 15px;">${name}</div>
+                            <div class="mono" style="font-size: 11px; color: var(--muted); margin-top: 2px;">SKU: ${item.product_variants.sku} · Transferred Qty: <b style="color:var(--fg);">${item.quantity} prs</b></div>
                         </div>
-                        <div style="font-weight: bold; font-size: 14px; color: ${totalColor}">
+                        <div class="mono" style="font-weight: 600; font-size: 12px; color: ${totalColor}">
                             Split Total: ${splitTotal} / ${item.quantity}
                         </div>
                     </div>
@@ -160,13 +310,13 @@
                         <td><input type="text" placeholder="e.g. 40" value="${split.size}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'size', this.value)"></td>
                         <td><input type="text" placeholder="e.g. BLK" value="${split.colour}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'colour', this.value)"></td>
                         <td><input type="number" min="1" value="${split.qty}" onchange="updateSplit(${itemIdx}, ${sIdx}, 'qty', this.value)"></td>
-                        <td><button class="btn btn-remove" onclick="removeSplit(${itemIdx}, ${sIdx})">Remove</button></td>
+                        <td style="width: 80px; text-align: right;"><button class="btn btn-remove" onclick="removeSplit(${itemIdx}, ${sIdx})">Remove</button></td>
                     </tr>
                 `).join('');
 
                 box.innerHTML = header + `
                     <table>
-                        <thead><tr><th>Size</th><th>Colour (Opt)</th><th>Quantity</th><th>Action</th></tr></thead>
+                        <thead><tr><th>Size</th><th>Colour (Optional)</th><th>Quantity</th><th style="text-align:right;">Action</th></tr></thead>
                         <tbody>${tableRows}</tbody>
                     </table>
                     <button class="btn btn-add" onclick="addSplit(${itemIdx})">+ Add Split Row</button>
