@@ -159,11 +159,20 @@
             margin-bottom: 14px;
             background: var(--surface);
         }
-        .item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+        .item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
         .msg { padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; display: none; font-size: 12px; font-weight: 500; border: 1px solid var(--line); }
         .error { background: rgba(239, 68, 68, 0.1); color: var(--bad); border-color: rgba(239, 68, 68, 0.3); }
         .success { background: rgba(16, 185, 129, 0.1); color: var(--ok); border-color: rgba(16, 185, 129, 0.3); }
         .mono { font-family: 'JetBrains Mono', monospace; }
+        @media (max-width: 640px) {
+            .topbar { padding: 0 14px; }
+            .container { margin: 14px auto; padding: 0 14px 48px; }
+            .header-card { padding: 14px; }
+            h1 { font-size: 15px; }
+            .grid { grid-template-columns: 1fr; }
+            th, td { padding: 6px; font-size: 11px; }
+            input { padding: 6px 8px; font-size: 12px; }
+        }
     </style>
 </head>
 <body>

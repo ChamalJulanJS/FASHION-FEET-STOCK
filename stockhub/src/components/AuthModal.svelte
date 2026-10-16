@@ -60,8 +60,8 @@
 </script>
 
 {#if app.authOpen}
-  <div class="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
-    <div class="card relative w-full max-w-md p-6 shadow-2xl" role="dialog" aria-modal="true" aria-label="Staff sign in">
+  <div class="fixed inset-0 z-[90] flex items-end justify-center overflow-y-auto bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div class="card relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-b-none p-5 shadow-2xl sm:rounded-b-xl sm:p-6" role="dialog" aria-modal="true" aria-label="Staff sign in">
       {#if !app.authMandatory}
         <button class="btn btn-ghost btn-sm absolute right-3 top-3" onclick={() => (app.authOpen = false)} aria-label="Close"><X class="h-4 w-4" /></button>
       {/if}
@@ -115,14 +115,14 @@
           <label class="flex cursor-pointer items-center gap-2 text-sm text-muted">
             <input type="checkbox" class="accent-[var(--accent)]" bind:checked={remember} />Keep me signed in on this device
           </label>
-          <button class="btn btn-primary w-full" disabled={busy}>Sign in <ArrowRight class="h-4 w-4" /></button>
+          <button class="btn btn-primary w-full h-10" disabled={busy}>Sign in <ArrowRight class="h-4 w-4" /></button>
           <p class="flex items-center justify-center gap-1.5 text-xs text-dim"><ShieldCheck class="h-3.5 w-3.5" />Cloud encrypted</p>
         </form>
       {:else if app.authTab === 'signup'}
         <form class="space-y-4" onsubmit={onSignUp}>
           <div><label class="label" for="su-name">Full name</label><input id="su-name" class="input" required placeholder="e.g. Kasun Perera" bind:value={suName} /></div>
           <div><label class="label" for="su-email">Email (login ID)</label><input id="su-email" class="input" type="email" required placeholder="e.g. transfer.kasun@ff.pos" bind:value={suEmail} /></div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div><label class="label" for="su-role">Role</label>
               <select id="su-role" class="input" bind:value={suRole}>
                 <option value="branch_manager">Branch Transfer Staff / Manager</option>

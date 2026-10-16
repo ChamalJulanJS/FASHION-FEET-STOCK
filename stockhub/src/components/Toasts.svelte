@@ -5,12 +5,12 @@
   const tone = { success: 'text-ok', error: 'text-bad', warning: 'text-warn', info: 'text-accent' };
 </script>
 
-<div class="pointer-events-none fixed right-4 top-4 z-[100] flex w-[min(92vw,360px)] flex-col gap-2" aria-live="polite">
+<div class="pointer-events-none fixed left-3 right-3 top-16 z-[100] flex flex-col gap-2 sm:left-auto sm:right-5 sm:w-[360px]" aria-live="polite">
   {#each app.toasts as t (t.id)}
     {@const Icon = icons[t.kind]}
-    <div class="pointer-events-auto flex items-start gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm shadow-xl shadow-black/30">
+    <div class="pointer-events-auto flex items-start gap-2.5 rounded-xl border border-line bg-surface/95 px-3.5 py-2.5 text-xs shadow-xl shadow-black/30 backdrop-blur">
       <Icon class="mt-0.5 h-4 w-4 shrink-0 {tone[t.kind]}" />
-      <span class="text-fg">{t.message}</span>
+      <span class="text-fg leading-relaxed">{t.message}</span>
     </div>
   {/each}
 </div>

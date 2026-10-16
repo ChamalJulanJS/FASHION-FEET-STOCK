@@ -29,7 +29,20 @@
   let pulseIdx = $state(-1);
   let searchInput: HTMLInputElement | undefined = $state();
   let cartSection: HTMLElement | undefined = $state();
+  let cartInView = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout>;
+
+  $effect(() => {
+    if (!cartSection || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        cartInView = entries[0]?.isIntersecting ?? false;
+      },
+      { threshold: 0.15 },
+    );
+    io.observe(cartSection);
+    return () => io.disconnect();
+  });
 
   // ---------------- derived ----------------
   const fromLoc = $derived(app.locations.find((l) => l.id === app.fromId));
@@ -479,9 +492,9 @@
   </section>
 
   <!-- MAIN WORKSPACE GRID -->
-  <div class="grid gap-4 lg:grid-cols-12 lg:items-start">
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
     <!-- STEP 2: SCAN & FIND SHOES (5 cols) -->
-    <section class="card flex flex-col gap-4 p-4 sm:p-5 lg:col-span-5" aria-labelledby="scan-h">
+    <section class="card flex min-w-0 flex-col gap-4 p-4 sm:p-5 lg:col-span-5" aria-labelledby="scan-h">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2.5">
           <span class="grid size-6 shrink-0 place-items-center rounded-md border border-line bg-raised font-mono text-[11px] font-bold text-fg">02</span>
@@ -735,7 +748,7 @@
     </section>
 
     <!-- STEP 3: TRANSFER BATCH & DISPATCH (7 cols) -->
-    <section class="card flex flex-col lg:col-span-7" aria-labelledby="cart-h" bind:this={cartSection}>
+    <section class="card flex min-w-0 scroll-mt-20 flex-col lg:col-span-7" aria-labelledby="cart-h" bind:this={cartSection}>
       <!-- Batch Header with Inline Metrics -->
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5">
         <div class="flex items-center gap-2.5">
@@ -773,7 +786,58 @@
           </p>
         </div>
       {:else}
-        <div class="max-h-[420px] overflow-x-auto overflow-y-auto">
+        <!-- Mobile: card list -->
+        <ul class="divide-y divide-line sm:hidden">
+          {#each app.cart as item, idx (item.variant.id)}
+            {@const v = item.variant}
+            {@const cur = app.getStock(v.id, app.fromId)}
+            <li class="px-4 py-3 transition-colors duration-500 {pulseIdx === idx ? 'bg-raised' : ''}">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="truncate text-xs font-semibold text-fg">
+                    {v.products?.brand ? v.products.brand + ' · ' : ''}{v.products?.name || v.sku}
+                  </div>
+                  <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span class="chip py-0 font-mono font-semibold text-fg">Sz {getShoeDisplaySize(v.size, v.products)}</span>
+                    <span class="font-mono text-dim">{v.sku}</span>
+                    <span class="font-mono font-semibold {cur >= item.qty ? 'text-ok' : 'text-bad'}">{cur} prs</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="grid size-8 shrink-0 place-items-center rounded-md text-dim transition hover:bg-raised hover:text-bad"
+                  aria-label="Remove style from batch"
+                  onclick={() => removeLine(idx)}
+                >
+                  <X class="size-4" />
+                </button>
+              </div>
+              <div class="mt-2 flex items-center justify-between gap-2">
+                <div class="inline-flex items-center gap-1">
+                  <button type="button" class="btn size-9 p-0" aria-label="Decrease quantity" onclick={() => changeQty(idx, -1)}>
+                    <Minus class="size-3.5" />
+                  </button>
+                  <input
+                    class="input h-9 w-14 px-1 py-0 text-center font-mono font-semibold"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    value={item.qty}
+                    aria-label="Quantity"
+                    onchange={(e) => setQty(idx, e.currentTarget.value)}
+                  />
+                  <button type="button" class="btn size-9 p-0" aria-label="Increase quantity" onclick={() => changeQty(idx, 1)}>
+                    <Plus class="size-3.5" />
+                  </button>
+                </div>
+                <span class="font-mono text-xs text-muted">{fmtMoney(Number(v.selling_price || 0) * item.qty)}</span>
+              </div>
+            </li>
+          {/each}
+        </ul>
+
+        <!-- Tablet / desktop: table -->
+        <div class="hidden max-h-[420px] overflow-x-auto overflow-y-auto sm:block">
           <table class="w-full min-w-[540px]">
             <thead class="sticky top-0 z-10 border-b border-line bg-surface">
               <tr>
@@ -913,7 +977,7 @@
             <Send class="size-3.5" />
             <span>
               Confirm &amp; Dispatch Transfer
-              {#if totalPairs > 0}({totalPairs} Pairs · {fmtMoney(totalValue)}){/if}
+              {#if totalPairs > 0}<span class="hidden sm:inline">({totalPairs} Pairs · {fmtMoney(totalValue)})</span>{/if}
             </span>
           {/if}
         </button>
@@ -926,7 +990,7 @@
 </div>
 
 <!-- Mobile floating batch button -->
-{#if app.cart.length > 0}
+{#if app.cart.length > 0 && !cartInView}
   <button
     type="button"
     class="btn btn-primary fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full px-5 py-2.5 shadow-xl lg:hidden"

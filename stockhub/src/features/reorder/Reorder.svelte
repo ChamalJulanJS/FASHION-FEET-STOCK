@@ -12,6 +12,8 @@
 
   let activeAddSizeProductId = $state<string | null>(null);
   let printModalOpen = $state(false);
+  let mobilePane = $state<'catalog' | 'sheet'>('catalog');
+  let sheetSection: HTMLElement | undefined = $state();
 
   onMount(() => {
     reorder.resolveLocation();
@@ -191,10 +193,30 @@
     </div>
   </div>
 
+  <!-- Mobile / Tablet View Switcher (< lg) -->
+  <div class="sticky top-14 z-30 -mx-4 border-b border-line bg-bg/95 px-4 py-2 backdrop-blur lg:hidden">
+    <div class="grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface p-1">
+      <button
+        type="button"
+        class="cursor-pointer rounded-md py-1.5 px-2 text-xs font-medium transition {mobilePane === 'catalog' ? 'bg-fg text-bg font-semibold shadow-xs' : 'text-muted hover:text-fg'}"
+        onclick={() => (mobilePane = 'catalog')}
+      >
+        Shoe Catalog ({models.length})
+      </button>
+      <button
+        type="button"
+        class="cursor-pointer rounded-md py-1.5 px-2 text-xs font-medium transition {mobilePane === 'sheet' ? 'bg-fg text-bg font-semibold shadow-xs' : 'text-muted hover:text-fg'}"
+        onclick={() => (mobilePane = 'sheet')}
+      >
+        Reorder Sheet ({reorder.sheet.length} · {sheetPairs} prs)
+      </button>
+    </div>
+  </div>
+
   <!-- Workspace 2-Column Grid -->
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
     <!-- Left Column: Shoe Models Catalog (7 cols on lg) -->
-    <div class="space-y-3 lg:col-span-7">
+    <div class="min-w-0 space-y-3 lg:col-span-7 {mobilePane === 'sheet' ? 'hidden lg:block' : ''}">
       <div class="flex items-center justify-between px-1">
         <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">
           Shoe Models &amp; Size Matrix
@@ -239,7 +261,7 @@
                 </div>
 
                 <!-- Card action buttons -->
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="grid grid-cols-2 gap-1.5 sm:flex sm:items-center sm:shrink-0">
                   <button
                     type="button"
                     class="btn btn-sm {inSheet ? 'btn-primary' : ''}"
@@ -293,7 +315,10 @@
     </div>
 
     <!-- Right Column: Sticky Reorder Sheet (5 cols on lg) -->
-    <div class="space-y-3 lg:col-span-5 lg:sticky lg:top-18">
+    <div
+      bind:this={sheetSection}
+      class="min-w-0 space-y-3 lg:col-span-5 lg:sticky lg:top-18 {mobilePane === 'catalog' ? 'hidden lg:block' : ''}"
+    >
       <div class="flex items-center justify-between px-1">
         <div class="flex items-center gap-2">
           <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">
@@ -320,8 +345,15 @@
           <PackageSearch class="mx-auto mb-2 h-8 w-8 text-dim" />
           <h3 class="text-xs font-semibold text-fg">Reorder Sheet is Empty</h3>
           <p class="mt-1 text-[11px] text-dim">
-            Click <strong class="text-muted">+ Reorder</strong> on any shoe model on the left to add sizes and quantities.
+            Click <strong class="text-muted">+ Reorder</strong> on any shoe model to add sizes and quantities.
           </p>
+          <button
+            type="button"
+            class="btn btn-sm mt-3 lg:hidden"
+            onclick={() => (mobilePane = 'catalog')}
+          >
+            Browse Shoe Catalog
+          </button>
         </div>
       {:else}
         <div class="space-y-2.5">
@@ -430,7 +462,7 @@
                           <div class="inline-flex items-center gap-1">
                             <button
                               type="button"
-                              class="grid h-6 w-6 cursor-pointer place-items-center rounded border border-line bg-raised text-muted hover:border-fg/40 hover:text-fg"
+                              class="grid h-8 w-8 sm:h-6 sm:w-6 cursor-pointer place-items-center rounded border border-line bg-raised text-muted hover:border-fg/40 hover:text-fg"
                               onclick={() => reorder.stepQty(it.productId, v.variantId, -1)}
                               aria-label="Decrease quantity"
                             >
@@ -438,14 +470,15 @@
                             </button>
                             <input
                               type="number"
+                              inputmode="numeric"
                               min="0"
-                              class="input h-6 w-12 p-0 text-center font-mono text-xs font-semibold"
+                              class="input h-8 w-12 sm:h-6 p-0 text-center font-mono text-xs font-semibold"
                               value={v.orderQty}
                               oninput={(e) => reorder.setQty(it.productId, v.variantId, (e.target as HTMLInputElement).value)}
                             />
                             <button
                               type="button"
-                              class="grid h-6 w-6 cursor-pointer place-items-center rounded border border-line bg-raised text-muted hover:border-fg/40 hover:text-fg"
+                              class="grid h-8 w-8 sm:h-6 sm:w-6 cursor-pointer place-items-center rounded border border-line bg-raised text-muted hover:border-fg/40 hover:text-fg"
                               onclick={() => reorder.stepQty(it.productId, v.variantId, 1)}
                               aria-label="Increase quantity"
                             >
@@ -545,6 +578,21 @@
     </div>
   </div>
 </div>
+
+<!-- Mobile floating button to switch to Reorder Sheet -->
+{#if mobilePane === 'catalog' && reorder.sheet.length > 0}
+  <button
+    type="button"
+    class="btn btn-primary fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full px-5 py-2.5 shadow-xl lg:hidden"
+    onclick={() => {
+      mobilePane = 'sheet';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }}
+  >
+    <Check class="h-3.5 w-3.5" />
+    <span>Reorder Sheet · {reorder.sheet.length} Models ({sheetPairs} prs)</span>
+  </button>
+{/if}
 
 <!-- Modal Overlays -->
 {#if activeAddSizeProductId}
