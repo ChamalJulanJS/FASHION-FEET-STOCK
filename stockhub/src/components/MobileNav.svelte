@@ -1,10 +1,11 @@
 <script lang="ts">
   import { app, type HubTab } from '../lib/app.svelte';
-  import { ArrowLeftRight, PackageSearch, History, Users, PackageCheck } from 'lucide-svelte';
+  import { ArrowLeftRight, PackageSearch, ClipboardCheck, History, PackageCheck } from 'lucide-svelte';
 
   const items: { id: HubTab; label: string; icon: any }[] = [
     { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
     { id: 'reorder', label: 'Reorder', icon: PackageSearch },
+    { id: 'stockcount', label: 'Stock Take', icon: ClipboardCheck },
     { id: 'history', label: 'History', icon: History },
   ];
   const cartCount = $derived(app.cart.reduce((n, l) => n + l.qty, 0));
@@ -30,7 +31,4 @@
   <a href="transfer_receiver.html" class="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-dim hover:text-muted">
     <PackageCheck class="h-4 w-4" />Receiver
   </a>
-  <button class="flex cursor-pointer flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-dim hover:text-muted" onclick={() => (app.staffManagerOpen = true)}>
-    <Users class="h-4 w-4" />Staff
-  </button>
 </nav>

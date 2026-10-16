@@ -8,6 +8,7 @@
   import StaffManager from './components/StaffManager.svelte';
   import Transfer from './features/transfer/Transfer.svelte';
   import Reorder from './features/reorder/Reorder.svelte';
+  import StockCount from './features/stockcount/StockCount.svelte';
   import History from './features/history/History.svelte';
 
   onMount(() => {
@@ -25,6 +26,7 @@
     <!-- Keep Transfer mounted so cart/scanner state survives tab switches -->
     <div class:hidden={app.tab !== 'transfer'}><Transfer /></div>
     {#if app.tab === 'reorder'}<Reorder />{/if}
+    {#if app.tab === 'stockcount'}<StockCount />{/if}
     {#if app.tab === 'history'}<History />{/if}
   </main>
   <MobileNav />

@@ -4,7 +4,7 @@ import type { CartLine, CurrentUser, Location, Staff, Toast, ToastKind, Variant 
 
 const USER_KEYS = ['ff_transfer_user', 'ff_pos_user'];
 
-export type HubTab = 'transfer' | 'reorder' | 'history';
+export type HubTab = 'transfer' | 'reorder' | 'stockcount' | 'history';
 export type ConnStatus = 'loading' | 'connected' | 'error';
 
 class AppStore {

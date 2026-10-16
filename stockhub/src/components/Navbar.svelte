@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app, type HubTab } from '../lib/app.svelte';
   import {
-    Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
+    Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, ClipboardCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
     Download, User, ChevronDown, Users, KeyRound, LogOut,
   } from 'lucide-svelte';
 
@@ -10,6 +10,7 @@
   const tabs: { id: HubTab; label: string; icon: any }[] = [
     { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
     { id: 'reorder', label: 'Stock & Reorder', icon: PackageSearch },
+    { id: 'stockcount', label: 'Stock Count', icon: ClipboardCheck },
     { id: 'history', label: 'History', icon: History },
   ];
 
