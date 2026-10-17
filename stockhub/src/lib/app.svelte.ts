@@ -4,7 +4,7 @@ import type { CartLine, CurrentUser, Location, Staff, Toast, ToastKind, Variant 
 
 const USER_KEYS = ['ff_transfer_user', 'ff_pos_user'];
 
-export type HubTab = 'transfer' | 'reorder' | 'stockcount' | 'history';
+export type HubTab = 'pos' | 'transfer' | 'reorder' | 'stockcount' | 'history';
 export type ConnStatus = 'loading' | 'connected' | 'error';
 
 class AppStore {
@@ -32,7 +32,7 @@ class AppStore {
 
   // --- ui ---
   tab = $state<HubTab>(
-    (['transfer', 'reorder', 'stockcount', 'history'].includes(localStorage.getItem('ff_hub_active_tab') || '')
+    (['pos', 'transfer', 'reorder', 'stockcount', 'history'].includes(localStorage.getItem('ff_hub_active_tab') || '')
       ? (localStorage.getItem('ff_hub_active_tab') as HubTab)
       : 'transfer'),
   );

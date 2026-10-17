@@ -2,7 +2,7 @@
   import { app, type HubTab } from '../lib/app.svelte';
   import {
     Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, ClipboardCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
-    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone, Store,
+    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone, Store, ShoppingBag,
   } from 'lucide-svelte';
 
   let menuOpen = $state(false);
@@ -21,6 +21,7 @@
   const canShowInstall = $derived(!isStandalone && (Boolean(app.deferredPwaPrompt) || isIos));
 
   const tabs: { id: HubTab; label: string; icon: any }[] = [
+    { id: 'pos', label: 'POS Bill', icon: ShoppingBag },
     { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
     { id: 'reorder', label: 'Stock & Reorder', icon: PackageSearch },
     { id: 'stockcount', label: 'Stock Count', icon: ClipboardCheck },

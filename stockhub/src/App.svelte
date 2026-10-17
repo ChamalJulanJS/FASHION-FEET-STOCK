@@ -7,6 +7,7 @@
   import AuthModal from './components/AuthModal.svelte';
   import StaffManager from './components/StaffManager.svelte';
   import BranchStockModal from './components/BranchStockModal.svelte';
+  import Pos from './features/pos/Pos.svelte';
   import Transfer from './features/transfer/Transfer.svelte';
   import Reorder from './features/reorder/Reorder.svelte';
   import StockCount from './features/stockcount/StockCount.svelte';
@@ -30,7 +31,8 @@
 <div class="flex min-h-full flex-col bg-bg text-fg">
   <Navbar />
   <main class="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-24 pt-5 md:px-6 md:pb-10">
-    <!-- Keep Transfer and StockCount mounted so state/scanner survives tab switches -->
+    <!-- Keep Pos, Transfer and StockCount mounted so state/scanner survives tab switches -->
+    <div class:hidden={app.tab !== 'pos'}><Pos /></div>
     <div class:hidden={app.tab !== 'transfer'}><Transfer /></div>
     <div class:hidden={app.tab !== 'stockcount'}><StockCount /></div>
     {#if app.tab === 'reorder'}<Reorder />{/if}
