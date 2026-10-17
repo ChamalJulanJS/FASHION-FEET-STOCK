@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CheckCircle2, Printer, X, MessageCircle, Copy, Phone } from 'lucide-svelte';
+  import { CheckCircle2, Printer, X, MessageCircle, Copy, Phone, Loader2 } from 'lucide-svelte';
   import { app, fmtMoney } from '../../lib/app.svelte';
   import {
     type PosReceiptDetails,
@@ -7,6 +7,7 @@
     buildWhatsAppReceiptText,
     openWhatsAppReceipt,
     printPosThermalReceipt,
+    sendReceiptToPcPrinter,
   } from './logic';
 
   let {
@@ -20,6 +21,8 @@
   } = $props();
 
   let phoneInput = $state('');
+  let pcPrintBusy = $state(false);
+  let pcPrintDone = $state(false);
 
   $effect(() => {
     phoneInput = receipt.customerPhone || receipt.customer?.phone || '';
@@ -28,6 +31,22 @@
   function handlePrint(width: '80mm' | '58mm') {
     if (!printPosThermalReceipt(receipt, width)) {
       app.toast('Please allow popups in your browser to print the receipt.', 'warning');
+    }
+  }
+
+  async function handlePcPrint() {
+    if (pcPrintBusy) return;
+    pcPrintBusy = true;
+    try {
+      const res = await sendReceiptToPcPrinter(receipt, receipt.locationId);
+      if (res.ok) {
+        pcPrintDone = true;
+        app.toast(res.message, 'success');
+      } else {
+        app.toast(res.message, 'error');
+      }
+    } finally {
+      pcPrintBusy = false;
     }
   }
 
@@ -97,6 +116,33 @@
             <span class="uppercase font-mono">{receipt.paymentMethod}</span>
           </div>
         </div>
+      </div>
+
+      <!-- Counter PC Printer Direct Trigger -->
+      <div class="flex items-center justify-between gap-2 rounded-xl border border-fg/20 bg-raised p-3">
+        <div class="min-w-0">
+          <div class="text-xs font-bold text-fg flex items-center gap-1.5">
+            <Printer class="h-4 w-4 text-ok shrink-0" />
+            <span>Counter PC Thermal Printer ({receipt.branchName})</span>
+          </div>
+          <p class="text-[11px] text-muted">
+            Prints directly on the USB thermal printer connected to the PC POS.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm h-9 shrink-0 px-3 font-bold"
+          onclick={handlePcPrint}
+          disabled={pcPrintBusy}
+        >
+          {#if pcPrintBusy}
+            <Loader2 class="h-3.5 w-3.5 animate-spin" />
+            <span>Sending...</span>
+          {:else}
+            <Printer class="h-3.5 w-3.5" />
+            <span>{pcPrintDone ? 'Re-Print on PC' : 'Print on PC'}</span>
+          {/if}
+        </button>
       </div>
 
       <!-- WhatsApp Digital Bill Box (Power-Outage Friendly!) -->
@@ -201,11 +247,11 @@
     <div class="flex flex-wrap gap-2 border-t border-line bg-surface p-3.5">
       <button type="button" class="btn btn-sm flex-1" onclick={() => handlePrint('80mm')}>
         <Printer class="size-3.5" />
-        <span>Print 80mm</span>
+        <span>Phone 80mm</span>
       </button>
       <button type="button" class="btn btn-sm flex-1" onclick={() => handlePrint('58mm')}>
         <Printer class="size-3.5" />
-        <span>Print 58mm</span>
+        <span>Phone 58mm</span>
       </button>
       <button type="button" class="btn btn-primary btn-sm flex-[1.5]" onclick={onclose}>
         <span>{success ? 'Done & Next Bill (ඊළඟ බිල)' : 'Close'}</span>

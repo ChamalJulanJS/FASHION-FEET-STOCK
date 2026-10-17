@@ -22,6 +22,9 @@
     clearPosDraft,
     formatInvoiceNo,
     printPosThermalReceipt,
+    loadAutoPcPrint,
+    saveAutoPcPrint,
+    sendReceiptToPcPrinter,
   } from './logic';
 
   // ---------------- state ----------------
@@ -34,6 +37,8 @@
   let cashReceived = $state('');
   let customer = $state<PosCustomer | null>(null);
   let whatsappPhone = $state('');
+  let autoPcPrint = $state(true);
+  let sendingPcSaleId = $state<string | null>(null);
 
   // Search & Scanner state
   let query = $state('');
@@ -77,6 +82,7 @@
   let draftLoaded = false;
 
   onMount(() => {
+    autoPcPrint = loadAutoPcPrint();
     const saved = loadPosDraft();
     if (saved) {
       if (saved.locationId) locationId = saved.locationId;
@@ -461,7 +467,7 @@
   }
 
   // ---------------- checkout saga (100% compatible with Desktop POS) ----------------
-  async function completeSale(autoPrint80mm = false) {
+  async function completeSale(forcePcPrint = false) {
     if (lines.length === 0) {
       app.toast('Please add at least one shoe item to the bill!', 'warning');
       SoundFx.warning();
@@ -575,6 +581,7 @@
           hour: '2-digit',
           minute: '2-digit',
         }),
+        locationId,
         branchName,
         cashierName,
         customer,
@@ -613,11 +620,16 @@
       activeReceipt = receiptData;
       receiptIsSuccess = true;
 
-      if (autoPrint80mm) {
-        printPosThermalReceipt(receiptData, '80mm');
+      if (autoPcPrint || forcePcPrint) {
+        const pcRes = await sendReceiptToPcPrinter(receiptData, locationId);
+        if (pcRes.ok) {
+          app.toast(pcRes.message, 'success');
+        } else {
+          app.toast(pcRes.message, 'warning');
+        }
+      } else {
+        app.toast(`Sale ${formatInvoiceNo(saleRow.invoice_no, saleRow.id)} completed!`, 'success');
       }
-
-      app.toast(`Sale ${formatInvoiceNo(saleRow.invoice_no, saleRow.id)} completed!`, 'success');
       fetchRecentSales(locationId);
     } catch (e: any) {
       console.error(e);
@@ -644,7 +656,7 @@
     }
   }
 
-  function openPastSaleReceipt(s: any) {
+  function buildReceiptFromPastSale(s: any): PosReceiptDetails {
     const branchName = activeLoc?.name || 'Fashion Feet';
     const staffObj = app.allStaff.find((st) => st.id === s.cashier_id);
     const items = (s.sale_items || []).map((si: any) => {
@@ -665,7 +677,7 @@
     });
     const tot = Number(s.total) || 0;
     const disc = Number(s.discount) || 0;
-    activeReceipt = {
+    return {
       id: s.id,
       invoiceNo: s.invoice_no,
       date: new Date(s.created_at).toLocaleString('en-GB', {
@@ -675,6 +687,7 @@
         hour: '2-digit',
         minute: '2-digit',
       }),
+      locationId,
       branchName,
       cashierName: staffObj?.name || 'Staff',
       paymentMethod: s.payment_method || 'cash',
@@ -685,7 +698,23 @@
       changeAmount: 0,
       items,
     };
+  }
+
+  function openPastSaleReceipt(s: any) {
+    activeReceipt = buildReceiptFromPastSale(s);
     receiptIsSuccess = false;
+  }
+
+  async function reprintPastSaleOnPc(s: any) {
+    if (sendingPcSaleId) return;
+    sendingPcSaleId = s.id;
+    try {
+      const r = buildReceiptFromPastSale(s);
+      const res = await sendReceiptToPcPrinter(r, locationId);
+      app.toast(res.message, res.ok ? 'success' : 'error');
+    } finally {
+      sendingPcSaleId = null;
+    }
   }
 
   async function voidSale(s: any) {
@@ -1358,6 +1387,32 @@
           </div>
         {/if}
 
+        <!-- Counter PC Printer Auto-Print Toggle -->
+        <label
+          class="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-line bg-surface p-3 select-none"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <Printer class="h-4 w-4 shrink-0 {autoPcPrint ? 'text-ok' : 'text-dim'}" />
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-fg">
+                Auto-Print on Counter PC ({activeLoc?.name || 'Branch'})
+              </div>
+              <div class="text-[10px] text-muted">
+                PC POS එක ON නම් USB Printer එකෙන් ස්වයංක්‍රීයව බිල Print වේ
+              </div>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            class="h-4 w-4 shrink-0 cursor-pointer accent-emerald-500"
+            checked={autoPcPrint}
+            onchange={(e) => {
+              autoPcPrint = (e.currentTarget as HTMLInputElement).checked;
+              saveAutoPcPrint(autoPcPrint);
+            }}
+          />
+        </label>
+
         <!-- Checkout Action Buttons -->
         <div class="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
           <button
@@ -1381,8 +1436,8 @@
             onclick={() => completeSale(true)}
             disabled={busy || lines.length === 0}
           >
-            <Printer class="h-4 w-4" />
-            <span>Print &amp; Pay (80mm)</span>
+            <Printer class="h-4 w-4 text-ok" />
+            <span>Print on PC &amp; Pay</span>
           </button>
         </div>
       </div>
@@ -1397,7 +1452,7 @@
           Recent Branch POS Bills ({activeLoc?.name || 'Branch'})
         </h2>
         <p class="text-[11px] text-dim">
-          Reprint thermal slip, send WhatsApp receipt, or cancel mistaken bills
+          Reprint on Counter PC printer, send WhatsApp receipt, or cancel mistaken bills
         </p>
       </div>
       <button
@@ -1458,13 +1513,29 @@
                 </td>
                 <td class="td py-2.5 pr-4 text-right">
                   <div class="inline-flex items-center gap-1.5">
+                    {#if !isCancelled}
+                      <button
+                        type="button"
+                        class="btn btn-sm h-7 px-2 text-[11px]"
+                        onclick={() => reprintPastSaleOnPc(s)}
+                        disabled={sendingPcSaleId === s.id}
+                        title="Print on Counter PC Thermal Printer"
+                      >
+                        {#if sendingPcSaleId === s.id}
+                          <Loader2 class="h-3 w-3 animate-spin" />
+                        {:else}
+                          <Printer class="h-3 w-3 text-ok" />
+                        {/if}
+                        <span>PC Print</span>
+                      </button>
+                    {/if}
                     <button
                       type="button"
                       class="btn btn-sm h-7 px-2 text-[11px]"
                       onclick={() => openPastSaleReceipt(s)}
                     >
                       <Receipt class="h-3 w-3 text-ok" />
-                      <span>Receipt / WhatsApp</span>
+                      <span>Receipt</span>
                     </button>
                     {#if !isCancelled}
                       <button

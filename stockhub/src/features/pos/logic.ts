@@ -1,4 +1,5 @@
 import { getShoeDisplaySize, fmtMoney } from '../../lib/app.svelte';
+import { restGet, restWrite } from '../../lib/api';
 import type { Variant } from '../../lib/types';
 
 export type PaymentMethod = 'cash' | 'card' | 'split' | 'qr';
@@ -35,6 +36,7 @@ export interface PosReceiptDetails {
   id: string;
   invoiceNo: string | number;
   date: string;
+  locationId?: string;
   branchName: string;
   cashierName: string;
   customer?: PosCustomer | null;
@@ -57,9 +59,115 @@ export interface PosDraft {
   cashReceived: string;
   customer: PosCustomer | null;
   whatsappPhone: string;
+  autoPcPrint?: boolean;
 }
 
 const POS_DRAFT_KEY = 'ff_mobile_pos_draft_v1';
+const AUTO_PC_PRINT_KEY = 'ff_pos_auto_pc_print';
+
+export function loadAutoPcPrint(): boolean {
+  try {
+    const v = localStorage.getItem(AUTO_PC_PRINT_KEY);
+    return v === null ? true : v === 'true';
+  } catch {
+    return true;
+  }
+}
+
+export function saveAutoPcPrint(enabled: boolean) {
+  try {
+    localStorage.setItem(AUTO_PC_PRINT_KEY, String(enabled));
+  } catch {}
+}
+
+/**
+ * Send a receipt from Mobile POS to the branch's Counter PC POS thermal printer
+ * via Supabase `receipt_settings` live print queue.
+ */
+export async function sendReceiptToPcPrinter(
+  r: PosReceiptDetails,
+  explicitLocationId?: string,
+): Promise<{ ok: boolean; message: string }> {
+  const locId = explicitLocationId || r.locationId;
+  if (!locId) {
+    return { ok: false, message: 'No branch location selected for PC printing.' };
+  }
+
+  const job = {
+    job_id: `${r.id}_${Date.now()}`,
+    sale_id: r.id,
+    invoice_no: r.invoiceNo,
+    location_id: locId,
+    branch_name: r.branchName,
+    cashier_name: r.cashierName,
+    customer_name: r.customer?.name || '',
+    customer_phone: r.customerPhone || r.customer?.phone || '',
+    payment_method: r.paymentMethod,
+    subtotal: r.subtotal,
+    discount: r.discount,
+    total: r.grandTotal,
+    cash_received: r.cashReceived,
+    change_amount: r.changeAmount,
+    date_str: r.date,
+    queued_at: Date.now(),
+    items: r.items.map((it) => ({
+      sku: it.sku,
+      name: it.brand ? `${it.brand} ${it.name}` : it.name,
+      size: it.displaySize && it.displaySize !== '-' ? it.displaySize : it.size || '',
+      colour: it.colour || '',
+      quantity: it.qty,
+      selling_price: it.unitPrice,
+    })),
+  };
+
+  try {
+    const existingRows = await restGet<any[]>(
+      `receipt_settings?location_id=eq.${encodeURIComponent(locId)}&select=location_id,email_address`,
+    );
+    const now = Date.now();
+    let queue: any[] = [];
+
+    if (existingRows && existingRows.length > 0) {
+      const rawField = existingRows[0].email_address;
+      if (rawField && typeof rawField === 'string' && rawField.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(rawField);
+          if (Array.isArray(parsed.ff_print_queue)) {
+            queue = parsed.ff_print_queue.filter(
+              (j: any) => j && typeof j.queued_at === 'number' && now - j.queued_at < 2 * 3600 * 1000,
+            );
+          }
+        } catch {}
+      }
+      queue.push(job);
+      if (queue.length > 10) queue = queue.slice(-10);
+
+      await restWrite('PATCH', `receipt_settings?location_id=eq.${encodeURIComponent(locId)}`, {
+        email_address: JSON.stringify({ ff_print_queue: queue }),
+      });
+    } else {
+      queue.push(job);
+      await restWrite('POST', 'receipt_settings', {
+        location_id: locId,
+        business_name: r.branchName || 'Fashion Feet',
+        paper_size: '58mm',
+        font_size: 'small',
+        email_address: JSON.stringify({ ff_print_queue: queue }),
+      });
+    }
+
+    return {
+      ok: true,
+      message: `Sent ${formatInvoiceNo(r.invoiceNo, r.id)} to ${r.branchName} Counter PC Printer!`,
+    };
+  } catch (err: any) {
+    console.error('Failed to queue PC print job:', err);
+    return {
+      ok: false,
+      message: 'Failed to send to PC Printer: ' + (err.message || 'Network error'),
+    };
+  }
+}
 
 export function loadPosDraft(): PosDraft | null {
   try {
