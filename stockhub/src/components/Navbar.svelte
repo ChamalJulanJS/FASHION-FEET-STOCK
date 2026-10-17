@@ -65,12 +65,12 @@
 <svelte:window onclick={() => (menuOpen = false)} />
 
 <header class="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur-md">
-  <div class="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-3 px-4 md:px-6">
+  <div class="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-2 px-3 md:px-5">
     <!-- Brand + Primary Navigation -->
-    <div class="flex items-center gap-4 min-w-0">
+    <div class="flex items-center gap-3 min-w-0">
       <button
         type="button"
-        class="flex items-center gap-2.5 text-left whitespace-nowrap shrink-0 cursor-pointer focus:outline-none"
+        class="flex items-center gap-2 text-left whitespace-nowrap shrink-0 cursor-pointer focus:outline-none"
         onclick={() => (app.tab = 'transfer')}
       >
         <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-fg text-bg shadow-xs">
@@ -88,13 +88,13 @@
 
       <div class="hidden h-5 w-px bg-line md:block"></div>
 
-      <nav class="hidden items-center gap-1 rounded-lg border border-line bg-surface p-1 md:flex" aria-label="Primary">
+      <nav class="hidden items-center gap-0.5 rounded-lg border border-line bg-surface p-1 md:flex" aria-label="Primary">
         {#each tabs as t}
           {@const Icon = t.icon}
           {@const active = app.tab === t.id}
           <button
             type="button"
-            class="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition
+            class="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition
               {active ? 'bg-fg text-bg font-semibold shadow-xs' : 'text-muted hover:bg-raised hover:text-fg'}"
             onclick={() => (app.tab = t.id)}
             aria-current={active ? 'page' : undefined}
@@ -113,45 +113,44 @@
         {/each}
         <a
           href="transfer_receiver.html"
-          class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted whitespace-nowrap shrink-0 transition hover:bg-raised hover:text-fg"
+          class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted whitespace-nowrap shrink-0 transition hover:bg-raised hover:text-fg"
           title="Open Transfer Receiver to split generic sizes"
         >
           <PackageCheck class="h-3.5 w-3.5 shrink-0" />
-          <span>Size Receiver</span>
+          <span><span class="hidden xl:inline">Size </span>Receiver</span>
         </a>
       </nav>
     </div>
 
     <!-- Right Utilities -->
-    <div class="flex items-center gap-1.5 shrink-0">
+    <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
       <button
         type="button"
-        class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-fg shadow-xs transition hover:border-fg/40 hover:bg-raised"
+        class="btn btn-sm gap-1.5"
         onclick={() => (app.branchStockModalOpen = true)}
         title="Check Live Branch Stock (ශාඛා තොග පරීක්ෂාව)"
       >
-        <Store class="h-3.5 w-3.5 text-ok" />
-        <span class="hidden md:inline">Check Stock</span>
-        <span class="hidden lg:inline text-dim">(ශාඛා තොග)</span>
-        <span class="md:hidden">Stock</span>
+        <Store class="h-3.5 w-3.5 shrink-0 text-ok" />
+        <span class="hidden sm:inline">Check Stock</span>
+        <span class="sm:hidden">Stock</span>
       </button>
 
       <button
         type="button"
-        class="btn btn-sm gap-2 text-muted hover:text-fg"
+        class="btn btn-sm gap-1.5 px-2 sm:px-2.5 text-muted hover:text-fg"
         onclick={() => app.syncCatalogAndStock()}
         disabled={app.isSyncing}
         title="{app.connText} — Click to sync catalog & stock"
       >
         <span class="h-2 w-2 shrink-0 rounded-full {dot}"></span>
-        <span class="hidden font-mono text-[11px] sm:inline">{compactStatus}</span>
+        <span class="hidden font-mono text-[11px] xl:inline">{compactStatus}</span>
         <RefreshCw class="h-3.5 w-3.5 shrink-0 text-dim {app.isSyncing ? 'animate-spin text-fg' : ''}" />
       </button>
 
       {#if canShowInstall}
-        <button class="btn btn-sm inline-flex" onclick={install} title="Install FashionFeet Stock Hub App">
-          <Download class="h-3.5 w-3.5" />
-          <span class="hidden xs:inline sm:inline">Install</span>
+        <button class="btn btn-sm inline-flex gap-1.5 px-2 sm:px-2.5" onclick={install} title="Install FashionFeet Stock Hub App">
+          <Download class="h-3.5 w-3.5 shrink-0" />
+          <span class="hidden sm:inline">Install</span>
         </button>
       {/if}
 
