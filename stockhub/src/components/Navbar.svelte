@@ -123,10 +123,10 @@
     </div>
 
     <!-- Right Utilities -->
-    <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+    <div class="flex items-center gap-1.5 shrink-0">
       <button
         type="button"
-        class="btn btn-sm gap-1.5"
+        class="btn btn-sm gap-1.5 px-2.5"
         onclick={() => (app.branchStockModalOpen = true)}
         title="Check Live Branch Stock (ශාඛා තොග පරීක්ෂාව)"
       >
@@ -148,15 +148,15 @@
       </button>
 
       {#if canShowInstall}
-        <button class="btn btn-sm inline-flex gap-1.5 px-2 sm:px-2.5" onclick={install} title="Install FashionFeet Stock Hub App">
+        <button class="btn btn-sm hidden sm:inline-flex gap-1.5 px-2.5" onclick={install} title="Install FashionFeet Stock Hub App">
           <Download class="h-3.5 w-3.5 shrink-0" />
-          <span class="hidden sm:inline">Install</span>
+          <span class="hidden lg:inline">Install</span>
         </button>
       {/if}
 
       <button
         type="button"
-        class="btn btn-ghost btn-sm w-8 p-0"
+        class="btn btn-ghost btn-sm hidden sm:inline-flex w-8 p-0"
         onclick={() => app.toggleTheme()}
         title="Switch theme ({app.theme === 'dark' ? 'Light mode' : 'Dark mode'})"
         aria-label="Switch theme"
@@ -166,7 +166,7 @@
 
       <button
         type="button"
-        class="btn btn-ghost btn-sm w-8 p-0"
+        class="btn btn-ghost btn-sm hidden sm:inline-flex w-8 p-0"
         onclick={() => app.toggleSound()}
         title="Sound effects: {app.soundEnabled ? 'On' : 'Off'}"
         aria-label="Toggle sound"
@@ -177,7 +177,7 @@
       <div class="relative">
         <button
           type="button"
-          class="btn btn-sm gap-2 pl-2.5 pr-2"
+          class="btn btn-sm gap-1.5 px-2 sm:gap-2 sm:pl-2.5 sm:pr-2"
           onclick={(e) => { e.stopPropagation(); menuOpen = !menuOpen; }}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -209,6 +209,34 @@
               </div>
             </div>
             <div class="p-1.5">
+              <div class="mb-1 grid grid-cols-2 gap-1 border-b border-line pb-1.5 sm:hidden">
+                <button
+                  type="button"
+                  class="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-line bg-raised px-2.5 py-2 text-xs font-medium text-fg"
+                  onclick={() => app.toggleTheme()}
+                >
+                  {#if app.theme === 'dark'}
+                    <Sun class="h-3.5 w-3.5 text-warn" />
+                    <span>Light Mode</span>
+                  {:else}
+                    <Moon class="h-3.5 w-3.5 text-muted" />
+                    <span>Dark Mode</span>
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  class="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-line bg-raised px-2.5 py-2 text-xs font-medium text-fg"
+                  onclick={() => app.toggleSound()}
+                >
+                  {#if app.soundEnabled}
+                    <Volume2 class="h-3.5 w-3.5 text-ok" />
+                    <span>Sound On</span>
+                  {:else}
+                    <VolumeX class="h-3.5 w-3.5 text-dim" />
+                    <span>Sound Off</span>
+                  {/if}
+                </button>
+              </div>
               {#if canShowInstall}
                 <button
                   type="button"
