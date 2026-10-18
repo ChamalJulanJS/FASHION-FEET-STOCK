@@ -3,7 +3,7 @@
   import {
     ShoppingBag, Store, ChevronDown, Check, Search, X, Camera, Zap, Plus, Minus,
     Trash2, Printer, MessageCircle, CreditCard, Banknote, QrCode, Split, User,
-    Phone, RefreshCw, Receipt, Ban, Loader2, Sparkles, PackagePlus, Layers,
+    Phone, RefreshCw, Receipt, Ban, Loader2, Sparkles, PackagePlus, Layers, AlertCircle,
   } from 'lucide-svelte';
   import { app, getShoeDisplaySize, fmtMoney } from '../../lib/app.svelte';
   import { restGet, restWrite } from '../../lib/api';
@@ -57,17 +57,26 @@
   let newCustName = $state('');
   let newCustPhone = $state('');
 
-  // Quick Add Unlisted Product modal
+  // Emergency Quick Add (100% Desktop POS Parity)
   let quickAddOpen = $state(false);
+  let qaExistingProductId = $state<string | null>(null);
   let qaName = $state('');
-  let qaBrand = $state('Generic');
-  let qaCategory = $state('Footwear');
+  let qaSku = $state('');
+  let qaBrand = $state('');
+  let qaCategory = $state('Casual');
   let qaSize = $state('');
   let qaColour = $state('');
   let qaPrice = $state('');
   let qaCost = $state('');
+  let qaInitialStock = $state('1');
   let qaBarcode = $state('');
   let qaBusy = $state(false);
+  let dbBrands = $state<string[]>([]);
+  let dbCategories = $state<string[]>([]);
+  let addingBrandOpen = $state(false);
+  let newBrandName = $state('');
+  let addingCategoryOpen = $state(false);
+  let newCategoryName = $state('');
 
   // Checkout & History state
   let busy = $state(false);
@@ -88,8 +97,22 @@
   // ---------------- lifecycle & persistence ----------------
   let draftLoaded = false;
 
+  async function loadBrandsAndCategories() {
+    try {
+      const [bRes, cRes] = await Promise.all([
+        restGet<{ name: string }[]>('brands?select=name&order=name.asc'),
+        restGet<{ name: string }[]>('categories?select=name&order=name.asc'),
+      ]);
+      if (bRes) dbBrands = bRes.map((b) => b.name).filter(Boolean);
+      if (cRes) dbCategories = cRes.map((c) => c.name).filter(Boolean);
+    } catch (e) {
+      console.warn('Could not load brands/categories:', e);
+    }
+  }
+
   onMount(() => {
     autoPcPrint = loadAutoPcPrint();
+    loadBrandsAndCategories();
     const saved = loadPosDraft();
     if (saved) {
       if (saved.locationId) locationId = saved.locationId;
@@ -160,6 +183,23 @@
   const splitCardBalance = $derived(
     paymentMethod === 'split' && cashReceivedNum < grandTotal ? grandTotal - cashReceivedNum : 0,
   );
+
+  // Merged brands and categories from DB + catalog
+  const allBrands = $derived.by(() => {
+    const s = new Set<string>(dbBrands);
+    for (const v of app.catalog) {
+      if (v.products?.brand) s.add(v.products.brand);
+    }
+    return Array.from(s).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  });
+
+  const allCategories = $derived.by(() => {
+    const s = new Set<string>(dbCategories.length > 0 ? dbCategories : ['Casual', 'Formal', 'Sports', 'Sandals', 'Slippers', 'Kids', 'Ladies', 'Gents']);
+    for (const v of app.catalog) {
+      if (v.products?.category) s.add(v.products.category);
+    }
+    return Array.from(s).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  });
 
   // Active shoe model siblings for 1-tap size bar
   const activeModelSiblings = $derived.by(() => {
@@ -273,7 +313,99 @@
     }
     SoundFx.scan();
     const dispSz = getShoeDisplaySize(v.size, v.products);
-    app.toast(`+${qty} added: ${v.products?.name || v.sku} (Sz ${dispSz})`, 'success');
+    if (avail <= 0) {
+      app.toast(`"${v.products?.name || v.sku}" (Sz ${dispSz}) has 0 stock in branch — added to bill!`, 'warning');
+    } else {
+      app.toast(`+${qty} added: ${v.products?.name || v.sku} (Sz ${dispSz})`, 'success');
+    }
+  }
+
+  async function saveLinePriceToDb(v: Variant, newPrice: number) {
+    if (isNaN(newPrice) || newPrice < 0) return;
+    if (Number(v.selling_price) === newPrice) return;
+    try {
+      await restWrite('PATCH', `product_variants?id=eq.${v.id}`, {
+        selling_price: newPrice,
+      });
+      v.selling_price = newPrice;
+      app.toast(`Price updated to Rs. ${newPrice.toLocaleString()}`, 'success');
+    } catch (e: any) {
+      app.toast('Failed to save price: ' + (e.message || 'Error'), 'error');
+    }
+  }
+
+  async function quickAddStockToBranchAndBill(v: Variant, addQty = 1) {
+    if (!locationId) {
+      app.toast('Please select an active branch first.', 'warning');
+      return;
+    }
+    try {
+      const existing = await restGet<{ id: string; quantity: number }[]>(
+        `stock_levels?variant_id=eq.${v.id}&location_id=eq.${locationId}&select=id,quantity`,
+      );
+      let newQty = addQty;
+      if (existing && existing.length > 0) {
+        newQty = Math.max(0, Number(existing[0].quantity)) + addQty;
+        await restWrite('PATCH', `stock_levels?id=eq.${existing[0].id}`, {
+          quantity: newQty,
+        });
+      } else {
+        await restWrite('POST', 'stock_levels', {
+          variant_id: v.id,
+          location_id: locationId,
+          quantity: newQty,
+        });
+      }
+      await restWrite('POST', 'stock_movements', {
+        variant_id: v.id,
+        to_location: locationId,
+        quantity: addQty,
+        type: 'stock_adjustment',
+        created_by: app.currentUser?.id || null,
+      });
+      app.stockMap.set(`${v.id}_${locationId}`, newQty);
+      app.syncVersion++;
+      addVariantToBill(v, addQty);
+      app.toast(`Added +${addQty} stock to branch & added to bill!`, 'success');
+    } catch (e: any) {
+      app.toast('Could not add branch stock: ' + (e.message || 'Error'), 'error');
+    }
+  }
+
+  function openEmergencyQuickAdd(rawCode = '', sizeHint = '') {
+    qaExistingProductId = null;
+    qaBarcode = rawCode.trim();
+    qaName = rawCode.trim();
+    qaSku = '';
+    qaBrand = allBrands[0] || '';
+    qaCategory = allCategories[0] || 'Casual';
+    qaSize = sizeHint;
+    qaColour = '';
+    qaCost = '';
+    qaPrice = '';
+    qaInitialStock = '1';
+    addingBrandOpen = false;
+    addingCategoryOpen = false;
+    quickAddOpen = true;
+  }
+
+  function openQuickAddSizeForModel(prodId: string) {
+    const siblings = app.productsMap.get(prodId) || [];
+    const sample = siblings[0];
+    qaExistingProductId = prodId;
+    qaBarcode = '';
+    qaName = sample?.products?.name || sample?.sku || '';
+    qaSku = '';
+    qaBrand = sample?.products?.brand || allBrands[0] || '';
+    qaCategory = sample?.products?.category || allCategories[0] || 'Casual';
+    qaSize = '';
+    qaColour = sample?.colour || '';
+    qaCost = sample?.cost_price ? String(sample.cost_price) : '';
+    qaPrice = sample?.selling_price ? String(sample.selling_price) : '';
+    qaInitialStock = '1';
+    addingBrandOpen = false;
+    addingCategoryOpen = false;
+    quickAddOpen = true;
   }
 
   function handleBarcodeScan(raw: string) {
@@ -330,13 +462,12 @@
       return;
     }
 
-    // 4. Not in catalog -> Offer Emergency Quick Add!
+    // 4. Not in catalog -> Offer Emergency Quick Add (exact Desktop POS behaviour)!
+    openEmergencyQuickAdd(baseSku || raw.trim(), size || '');
     qaBarcode = raw.trim();
-    qaName = baseSku || raw.trim();
-    qaSize = size || '';
-    quickAddOpen = true;
+    resetSearch();
     SoundFx.warning();
-    app.toast(`Code "${raw.trim()}" not in catalog — Quick Add opened!`, 'warning');
+    app.toast(`"${raw.trim()}" not found in system — Emergency Quick Add opened!`, 'warning');
   }
 
   function changeLineQty(idx: number, delta: number) {
@@ -416,68 +547,160 @@
     }
   }
 
-  // ---------------- emergency quick add item ----------------
+  async function createQuickBrand() {
+    const b = newBrandName.trim();
+    if (!b) return;
+    try {
+      await restWrite('POST', 'brands', { name: b });
+      dbBrands = [...dbBrands, b].sort((x, y) => x.localeCompare(y));
+      qaBrand = b;
+      newBrandName = '';
+      addingBrandOpen = false;
+      app.toast(`Brand "${b}" added!`, 'success');
+    } catch (e: any) {
+      qaBrand = b;
+      newBrandName = '';
+      addingBrandOpen = false;
+    }
+  }
+
+  async function createQuickCategory() {
+    const c = newCategoryName.trim();
+    if (!c) return;
+    try {
+      await restWrite('POST', 'categories', { name: c });
+      dbCategories = [...dbCategories, c].sort((x, y) => x.localeCompare(y));
+      qaCategory = c;
+      newCategoryName = '';
+      addingCategoryOpen = false;
+      app.toast(`Category "${c}" added!`, 'success');
+    } catch (e: any) {
+      qaCategory = c;
+      newCategoryName = '';
+      addingCategoryOpen = false;
+    }
+  }
+
+  // ---------------- emergency quick add item (100% Desktop POS Parity) ----------------
+  function generateDesktopPosSku(category: string, name: string): string {
+    const r = (category || '').slice(0, 3).toUpperCase() || 'SHO';
+    const o = name
+      .split(' ')
+      .map((w) => w.replace(/[^a-zA-Z0-9]/g, ''))
+      .filter(Boolean);
+    const l = o.length > 0 && o[0].length >= 3 ? o[0].slice(0, 3).toUpperCase() : 'XXX';
+    const c = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${r}-${l}-${c}`;
+  }
+
   async function submitQuickAdd() {
     if (!qaName.trim()) {
-      app.toast('Please enter Shoe Name / Code.', 'warning');
+      app.toast('Product name is required', 'warning');
       return;
     }
     const priceNum = parseFloat(String(qaPrice)) || 0;
     if (priceNum <= 0) {
-      app.toast('Please enter a valid Selling Price.', 'warning');
+      app.toast('Selling price is required', 'warning');
       return;
     }
     qaBusy = true;
     try {
       const costNum = parseFloat(String(qaCost)) || 0;
-      const skuCode =
-        qaName.trim().toUpperCase().replace(/\s+/g, '-') +
-        (qaSize.trim() ? `-${qaSize.trim()}` : '');
+      const initStock = Math.max(0, parseInt(String(qaInitialStock)) || 0);
+      const skuCode = qaSku.trim()
+        ? qaSku.trim().toUpperCase()
+        : generateDesktopPosSku(qaCategory, qaName.trim());
 
-      // 1. Insert product
-      const prodRes = await restWrite<any[]>('POST', 'products', {
-        name: qaName.trim(),
-        brand: qaBrand.trim() || 'Generic',
-        category: qaCategory.trim() || 'Footwear',
-        status: 'active',
-      });
-      const prod = Array.isArray(prodRes) ? prodRes[0] : prodRes;
+      let prodId = qaExistingProductId;
+      let prodObj: { id: string; name: string; brand: string | null; category: string | null };
 
-      // 2. Insert variant
+      if (prodId) {
+        const existingSibs = app.productsMap.get(prodId) || [];
+        const p = existingSibs[0]?.products;
+        prodObj = {
+          id: prodId,
+          name: p?.name || qaName.trim(),
+          brand: p?.brand || qaBrand.trim() || null,
+          category: p?.category || qaCategory.trim() || 'Casual',
+        };
+      } else {
+        // 1. Insert product (exact Desktop POS payload)
+        const prodRes = await restWrite<any[]>('POST', 'products', {
+          name: qaName.trim(),
+          brand: qaBrand.trim() || null,
+          category: qaCategory.trim() || 'Casual',
+          status: 'active',
+        });
+        const createdProd = Array.isArray(prodRes) ? prodRes[0] : prodRes;
+        prodId = createdProd.id;
+        prodObj = {
+          id: createdProd.id,
+          name: createdProd.name,
+          brand: createdProd.brand,
+          category: createdProd.category,
+        };
+      }
+
+      // 2. Insert product_variant (exact Desktop POS payload)
       const varRes = await restWrite<any[]>('POST', 'product_variants', {
-        product_id: prod.id,
+        product_id: prodObj.id,
         sku: skuCode,
         barcode: qaBarcode.trim() || null,
         size: qaSize.trim() || null,
         colour: qaColour.trim() || null,
-        selling_price: priceNum,
         cost_price: costNum,
+        selling_price: priceNum,
       });
       const newVarRaw = Array.isArray(varRes) ? varRes[0] : varRes;
+
+      // 3. Insert initial stock into stock_levels & stock_movements (exact Desktop POS behaviour!)
+      if (initStock > 0 && locationId) {
+        await restWrite('POST', 'stock_levels', {
+          variant_id: newVarRaw.id,
+          location_id: locationId,
+          quantity: initStock,
+        });
+        await restWrite('POST', 'stock_movements', {
+          variant_id: newVarRaw.id,
+          to_location: locationId,
+          quantity: initStock,
+          type: 'stock_adjustment',
+          created_by: app.currentUser?.id || null,
+        });
+        app.stockMap.set(`${newVarRaw.id}_${locationId}`, initStock);
+      }
+
       const fullVariant: Variant = {
         ...newVarRaw,
         products: {
-          id: prod.id,
-          name: prod.name,
-          brand: prod.brand,
-          category: prod.category,
+          id: prodObj.id,
+          name: prodObj.name,
+          brand: prodObj.brand || undefined,
+          category: prodObj.category || undefined,
         },
       };
 
-      // 3. Add to local catalog & bill
+      // 4. Add to local catalog & bill
       app.catalog.unshift(fullVariant);
-      app.productsMap.set(prod.id, [fullVariant]);
+      const existingList = app.productsMap.get(prodObj.id) || [];
+      app.productsMap.set(prodObj.id, [...existingList, fullVariant]);
+      app.syncVersion++;
+
       addVariantToBill(fullVariant, 1);
+      app.toast('Product quickly added and ready to sell!', 'success');
 
       quickAddOpen = false;
+      qaExistingProductId = null;
       qaName = '';
+      qaSku = '';
       qaSize = '';
       qaColour = '';
       qaPrice = '';
       qaCost = '';
+      qaInitialStock = '1';
       qaBarcode = '';
     } catch (e: any) {
-      app.toast('Quick Add failed: ' + (e.message || 'Error'), 'error');
+      app.toast('Failed to quick-add product: ' + (e.message || 'Error'), 'error');
     } finally {
       qaBusy = false;
     }
@@ -967,15 +1190,15 @@
             <span>Scan Barcode or Search Shoe Code</span>
           </label>
 
-          <div class="flex items-center gap-1.5">
+          <div class="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              class="btn btn-sm h-7 px-2.5 text-[11px]"
-              onclick={() => (quickAddOpen = true)}
-              title="Emergency Quick Add for unlisted items"
+              class="btn btn-sm h-7 px-2.5 text-[11px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+              onclick={() => openEmergencyQuickAdd(query)}
+              title="Emergency Quick Add for items missing in branch or system"
             >
-              <PackagePlus class="h-3.5 w-3.5 text-warn" />
-              <span>+ Quick Item</span>
+              <AlertCircle class="h-3.5 w-3.5 text-amber-500" />
+              <span>Emergency Quick Add</span>
             </button>
 
             <button
@@ -1040,10 +1263,10 @@
               <ul class="max-h-80 divide-y divide-line overflow-y-auto">
                 {#each results as v (v.id)}
                   {@const st = app.getStock(v.id, locationId)}
-                  <li>
+                  <li class="flex items-center justify-between gap-2 px-3.5 py-2.5 transition hover:bg-raised">
                     <button
                       type="button"
-                      class="flex w-full cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 text-left transition hover:bg-raised"
+                      class="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 text-left"
                       onclick={() => {
                         addVariantToBill(v, 1);
                         resetSearch();
@@ -1081,35 +1304,68 @@
                           {fmtMoney(v.selling_price || 0)}
                         </div>
                         <div class="mt-0.5 font-mono text-[11px] font-semibold {st > 0 ? 'text-ok' : 'text-bad'}">
-                          {st} in stock
+                          {st > 0 ? `${st} in stock` : '0 in branch'}
                         </div>
                       </div>
                     </button>
+                    {#if st <= 0}
+                      <button
+                        type="button"
+                        class="btn btn-sm h-7 shrink-0 px-2 text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          quickAddStockToBranchAndBill(v, 1);
+                          resetSearch();
+                        }}
+                        title="Add +1 stock to this branch and add to bill"
+                      >
+                        <Plus class="h-3 w-3" />
+                        <span>+1 Stock &amp; Bill</span>
+                      </button>
+                    {/if}
                   </li>
                 {:else}
-                  <li class="p-5 text-center space-y-2">
+                  <li class="p-5 text-center space-y-2.5">
                     <p class="text-xs text-muted">No catalog item found for "{debounced}"</p>
                     <button
                       type="button"
-                      class="btn btn-sm"
+                      class="btn btn-sm h-9 px-3.5 bg-amber-600 text-white hover:bg-amber-700 border-amber-600 font-semibold"
                       onclick={() => {
-                        qaName = debounced.trim();
-                        quickAddOpen = true;
+                        const { baseSku, size } = extractBaseSkuAndSize(debounced.trim());
+                        openEmergencyQuickAdd(baseSku || debounced.trim(), size || '');
+                        qaBarcode = debounced.trim();
                         resetSearch();
                       }}
                     >
-                      <PackagePlus class="h-3.5 w-3.5 text-warn" />
-                      <span>Quick Add "{debounced.trim()}" &amp; Sell</span>
+                      <AlertCircle class="h-3.5 w-3.5" />
+                      <span>Emergency Quick Add "{debounced.trim()}"</span>
                     </button>
                   </li>
                 {/each}
               </ul>
+              {#if results.length > 0}
+                <div class="flex items-center justify-between border-t border-line bg-raised/50 px-3 py-2">
+                  <span class="text-[11px] text-muted">Item or size not in list?</span>
+                  <button
+                    type="button"
+                    class="btn btn-sm h-7 px-2.5 text-[11px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                    onclick={() => {
+                      const { baseSku, size } = extractBaseSkuAndSize(debounced.trim());
+                      openEmergencyQuickAdd(baseSku || debounced.trim(), size || '');
+                      resetSearch();
+                    }}
+                  >
+                    <PackagePlus class="h-3 w-3" />
+                    <span>Emergency Quick Add</span>
+                  </button>
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
 
         <!-- Active Model 1-Tap Size Selector Bar -->
-        {#if activeModelSiblings.length > 1}
+        {#if activeModelSiblings.length >= 1}
           {@const modelProd = activeModelSiblings[0].products}
           <div class="rounded-xl border border-line bg-raised/40 p-2.5">
             <div class="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-dim">
@@ -1147,6 +1403,17 @@
                   </span>
                 </button>
               {/each}
+              {#if activeModelProductId}
+                <button
+                  type="button"
+                  class="min-w-[58px] cursor-pointer rounded-lg border border-dashed border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-center text-amber-600 dark:text-amber-400 transition hover:bg-amber-500/20"
+                  onclick={() => openQuickAddSizeForModel(activeModelProductId!)}
+                  title="Add a missing size for this model and add to bill"
+                >
+                  <span class="block text-xs font-bold">+ Size</span>
+                  <span class="block text-[9px] font-semibold">Quick Add</span>
+                </button>
+              {/if}
             </div>
           </div>
         {/if}
@@ -1210,15 +1477,16 @@
 
                 <!-- Price, Qty Stepper & Line Total -->
                 <div class="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
-                  <!-- Editable Unit Price -->
+                  <!-- Editable Unit Price (syncs with DB like Desktop POS) -->
                   <div class="flex items-center gap-1">
                     <span class="text-[10px] text-dim">Rs.</span>
                     <input
                       type="number"
                       class="input h-8 w-24 px-2 text-right font-mono text-xs font-semibold"
                       bind:value={line.unitPrice}
+                      onchange={() => saveLinePriceToDb(v, Number(line.unitPrice) || 0)}
                       min="0"
-                      title="Unit selling price (editable)"
+                      title="Click to change selling price (updates catalog price)"
                     />
                   </div>
 
@@ -2162,92 +2430,287 @@
   </div>
 </div>
 
-<!-- Emergency Quick Add Unlisted Item Modal -->
+<!-- Emergency Quick Add Modal (100% Desktop POS Parity + Mobile Responsive) -->
 {#if quickAddOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-    <div class="card w-full max-w-md overflow-hidden shadow-2xl">
-      <div class="flex items-center justify-between border-b border-line bg-raised px-4 py-3">
-        <div class="flex items-center gap-2">
-          <PackagePlus class="h-4 w-4 text-warn" />
-          <h3 class="font-display text-sm font-bold text-fg">
-            Quick Add &amp; Sell Unlisted Shoe
-          </h3>
+  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-sm">
+    <div class="card flex max-h-[92vh] w-full max-w-[460px] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl border-none shadow-2xl">
+      <!-- Amber Header (Exact Desktop POS Styling) -->
+      <div class="bg-amber-600 p-4 sm:p-5 text-white shrink-0">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="rounded-lg bg-white/20 p-2 shrink-0">
+              <AlertCircle class="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+            </div>
+            <div>
+              <h3 class="font-display text-base sm:text-lg font-bold leading-tight text-white">
+                {qaExistingProductId ? 'Quick Add Missing Size' : 'Emergency Quick Add'}
+              </h3>
+              <p class="mt-0.5 text-[11px] text-amber-100">
+                {qaExistingProductId
+                  ? `Adding new size variant to "${qaName}"`
+                  : qaBarcode
+                    ? `Barcode "${qaBarcode}" not found in system.`
+                    : 'Add item not in branch / system directly to sale.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-white/15 text-white hover:bg-white/25"
+            onclick={() => (quickAddOpen = false)}
+            aria-label="Close modal"
+          >
+            <X class="size-4" />
+          </button>
         </div>
-        <button class="btn btn-ghost btn-sm size-7 p-0" onclick={() => (quickAddOpen = false)}>
-          <X class="size-4" />
-        </button>
       </div>
 
-      <div class="p-4 space-y-3 text-xs">
-        <div>
-          <label for="qa-name" class="label">Shoe Code / Model Name *</label>
+      <!-- Scrollable Body -->
+      <div class="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs">
+        <!-- Warning Alert Banner -->
+        <div class="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
+          <AlertCircle class="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div class="space-y-0.5">
+            <div class="text-[11px] font-bold uppercase tracking-wider">Important</div>
+            <div class="text-[11px] opacity-90 leading-relaxed">
+              Only use this to add items missing during checkout. For bulk stock arrivals, use the <strong>GRN</strong> tab.
+            </div>
+          </div>
+        </div>
+
+        {#if qaExistingProductId}
+          <div class="flex items-center justify-between rounded-lg border border-line bg-raised px-3 py-2">
+            <span class="text-[11px] text-muted">
+              Linked to existing model: <strong class="text-fg">{qaName}</strong>
+            </span>
+            <button
+              type="button"
+              class="text-[11px] font-semibold text-amber-600 dark:text-amber-400 underline cursor-pointer"
+              onclick={() => (qaExistingProductId = null)}
+            >
+              Create as New Product instead
+            </button>
+          </div>
+        {/if}
+
+        <!-- Product Name -->
+        <div class="space-y-1.5">
+          <label for="qa-name" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+            Product Name *
+          </label>
           <input
             id="qa-name"
             type="text"
-            class="input h-9 text-xs"
-            placeholder="e.g. SFW099 or Ladies Sandal"
+            class="input h-10 text-xs font-medium"
+            placeholder="e.g. Nike Air Max or SFW099"
             bind:value={qaName}
+            disabled={Boolean(qaExistingProductId)}
           />
         </div>
 
-        <div class="grid grid-cols-2 gap-2.5">
-          <div>
-            <label for="qa-size" class="label">Shoe Size</label>
+        <!-- Brand & Category (2 Columns on Desktop & Mobile) -->
+        {#if !qaExistingProductId}
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <!-- Brand -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="qa-brand" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+                  Brand
+                </label>
+                <button
+                  type="button"
+                  class="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                  onclick={() => (addingBrandOpen = !addingBrandOpen)}
+                >
+                  {addingBrandOpen ? 'Cancel' : '+ New Brand'}
+                </button>
+              </div>
+              {#if addingBrandOpen}
+                <div class="flex gap-1.5">
+                  <input
+                    type="text"
+                    class="input h-9 flex-1 text-xs"
+                    placeholder="Brand name..."
+                    bind:value={newBrandName}
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-sm h-9 px-2.5 bg-amber-600 text-white border-amber-600"
+                    onclick={createQuickBrand}
+                  >
+                    Add
+                  </button>
+                </div>
+              {:else}
+                <select id="qa-brand" class="input h-10 text-xs" bind:value={qaBrand}>
+                  <option value="">Select Brand</option>
+                  {#each allBrands as b (b)}
+                    <option value={b}>{b}</option>
+                  {/each}
+                </select>
+              {/if}
+            </div>
+
+            <!-- Category -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="qa-category" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+                  Category
+                </label>
+                <button
+                  type="button"
+                  class="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                  onclick={() => (addingCategoryOpen = !addingCategoryOpen)}
+                >
+                  {addingCategoryOpen ? 'Cancel' : '+ New Category'}
+                </button>
+              </div>
+              {#if addingCategoryOpen}
+                <div class="flex gap-1.5">
+                  <input
+                    type="text"
+                    class="input h-9 flex-1 text-xs"
+                    placeholder="Category name..."
+                    bind:value={newCategoryName}
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-sm h-9 px-2.5 bg-amber-600 text-white border-amber-600"
+                    onclick={createQuickCategory}
+                  >
+                    Add
+                  </button>
+                </div>
+              {:else}
+                <select id="qa-category" class="input h-10 text-xs" bind:value={qaCategory}>
+                  {#each allCategories as c (c)}
+                    <option value={c}>{c}</option>
+                  {/each}
+                </select>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Size & Color (2 Columns) -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <label for="qa-size" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+              Size
+            </label>
             <input
               id="qa-size"
               type="text"
-              class="input h-9 text-xs font-mono"
-              placeholder="e.g. 40"
+              class="input h-10 font-mono text-xs font-bold"
+              placeholder="e.g. 42"
               bind:value={qaSize}
             />
           </div>
-          <div>
-            <label for="qa-colour" class="label">Colour</label>
+          <div class="space-y-1.5">
+            <label for="qa-colour" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+              Color
+            </label>
             <input
               id="qa-colour"
               type="text"
-              class="input h-9 text-xs"
+              class="input h-10 text-xs"
               placeholder="e.g. Black"
               bind:value={qaColour}
             />
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2.5">
-          <div>
-            <label for="qa-price" class="label">Selling Price (Rs.) *</label>
-            <input
-              id="qa-price"
-              type="number"
-              class="input h-9 text-xs font-mono font-bold"
-              placeholder="e.g. 3500"
-              bind:value={qaPrice}
-            />
-          </div>
-          <div>
-            <label for="qa-cost" class="label">Cost Price (Optional)</label>
+        <!-- Cost, Price, Stock (3 Columns — Exact Desktop POS Layout) -->
+        <div class="grid grid-cols-3 gap-2.5 sm:gap-3">
+          <div class="space-y-1.5">
+            <label for="qa-cost" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+              Cost (Rs.)
+            </label>
             <input
               id="qa-cost"
               type="number"
-              class="input h-9 text-xs font-mono"
+              class="input h-10 font-mono text-xs"
               placeholder="0"
               bind:value={qaCost}
+            />
+          </div>
+          <div class="space-y-1.5">
+            <label for="qa-price" class="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Price (Rs.) *
+            </label>
+            <input
+              id="qa-price"
+              type="number"
+              class="input h-10 border-amber-500/40 bg-amber-500/5 font-mono text-xs font-bold text-fg"
+              placeholder="0"
+              bind:value={qaPrice}
+            />
+          </div>
+          <div class="space-y-1.5">
+            <label for="qa-stock" class="text-[11px] font-bold uppercase tracking-wider text-muted">
+              Stock
+            </label>
+            <input
+              id="qa-stock"
+              type="number"
+              class="input h-10 text-center font-mono text-xs font-bold"
+              bind:value={qaInitialStock}
+              min="0"
+            />
+          </div>
+        </div>
+
+        <!-- Optional SKU & Barcode Override -->
+        <div class="grid grid-cols-2 gap-3 pt-1 border-t border-line/60">
+          <div class="space-y-1">
+            <label for="qa-sku" class="text-[10px] font-semibold uppercase tracking-wider text-dim">
+              SKU Code (Auto if blank)
+            </label>
+            <input
+              id="qa-sku"
+              type="text"
+              class="input h-9 font-mono text-xs"
+              placeholder="Auto-generated"
+              bind:value={qaSku}
+            />
+          </div>
+          <div class="space-y-1">
+            <label for="qa-barcode" class="text-[10px] font-semibold uppercase tracking-wider text-dim">
+              Barcode (Optional)
+            </label>
+            <input
+              id="qa-barcode"
+              type="text"
+              class="input h-9 font-mono text-xs"
+              placeholder="Scan or leave blank"
+              bind:value={qaBarcode}
             />
           </div>
         </div>
       </div>
 
-      <div class="flex gap-2 border-t border-line bg-surface p-3.5">
-        <button type="button" class="btn flex-1 h-9 text-xs" onclick={() => (quickAddOpen = false)}>
+      <!-- Footer Actions -->
+      <div class="flex gap-2.5 border-t border-line bg-surface p-4 shrink-0">
+        <button
+          type="button"
+          class="btn flex-1 h-10 text-xs font-semibold"
+          onclick={() => (quickAddOpen = false)}
+        >
           Cancel
         </button>
         <button
           type="button"
-          class="btn btn-primary flex-[1.5] h-9 text-xs"
+          class="btn flex-[2] h-10 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white border-amber-600 shadow-md"
           onclick={submitQuickAdd}
           disabled={qaBusy}
         >
-          <span>{qaBusy ? 'Adding...' : 'Add to Catalog & Bill'}</span>
+          {#if qaBusy}
+            <Loader2 class="h-4 w-4 animate-spin" />
+            <span>Adding...</span>
+          {:else}
+            <Plus class="h-4 w-4" />
+            <span>Add to Sale</span>
+          {/if}
         </button>
       </div>
     </div>

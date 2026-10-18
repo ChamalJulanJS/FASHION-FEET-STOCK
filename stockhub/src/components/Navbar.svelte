@@ -2,7 +2,7 @@
   import { app, type HubTab } from '../lib/app.svelte';
   import {
     Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, ClipboardCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
-    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone, Store, ShoppingBag,
+    Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone, Store, ShoppingBag, PackagePlus,
   } from 'lucide-svelte';
 
   let menuOpen = $state(false);
@@ -22,6 +22,7 @@
 
   const tabs: { id: HubTab; label: string; icon: any }[] = [
     { id: 'pos', label: 'POS Bill', icon: ShoppingBag },
+    { id: 'grn', label: 'GRN', icon: PackagePlus },
     { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
     { id: 'reorder', label: 'Stock & Reorder', icon: PackageSearch },
     { id: 'stockcount', label: 'Stock Count', icon: ClipboardCheck },
@@ -247,6 +248,14 @@
                   <span>Install App on Phone</span>
                 </button>
               {/if}
+              <a
+                href="transfer_receiver.html"
+                class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-fg hover:bg-raised md:hidden"
+                onclick={() => (menuOpen = false)}
+              >
+                <PackageCheck class="h-3.5 w-3.5 text-muted" />
+                <span>Size Receiver (Transfer Split)</span>
+              </a>
               <button
                 type="button"
                 class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-fg hover:bg-raised"

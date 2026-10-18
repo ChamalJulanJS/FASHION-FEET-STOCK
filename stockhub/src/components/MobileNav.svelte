@@ -1,9 +1,10 @@
 <script lang="ts">
   import { app, type HubTab } from '../lib/app.svelte';
-  import { ShoppingBag, ArrowLeftRight, PackageSearch, ClipboardCheck, History, PackageCheck } from 'lucide-svelte';
+  import { ShoppingBag, PackagePlus, ArrowLeftRight, PackageSearch, ClipboardCheck, History } from 'lucide-svelte';
 
   const items: { id: HubTab; label: string; icon: any }[] = [
     { id: 'pos', label: 'POS Bill', icon: ShoppingBag },
+    { id: 'grn', label: 'GRN', icon: PackagePlus },
     { id: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
     { id: 'reorder', label: 'Reorder', icon: PackageSearch },
     { id: 'stockcount', label: 'Stock Take', icon: ClipboardCheck },
@@ -29,7 +30,4 @@
       {/if}
     </button>
   {/each}
-  <a href="transfer_receiver.html" class="flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-dim hover:text-muted">
-    <PackageCheck class="h-4 w-4" />Receiver
-  </a>
 </nav>
