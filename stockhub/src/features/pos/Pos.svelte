@@ -78,6 +78,13 @@
   let voidingSaleId = $state<string | null>(null);
   let billSection: HTMLElement | undefined = $state();
 
+  // Recent Bills Detail View & Filters state
+  let recentViewMode = $state<'detailed' | 'compact'>('detailed');
+  let recentDateFilter = $state<'today' | 'yesterday' | '7days' | 'all'>('all');
+  let recentPaymentFilter = $state<'all' | 'cash' | 'card'>('all');
+  let recentSearch = $state('');
+  let expandedSaleIds = $state<Record<string, boolean>>({});
+
   // ---------------- lifecycle & persistence ----------------
   let draftLoaded = false;
 
@@ -166,16 +173,26 @@
     });
   });
 
+  function toLocalDateKey(isoStr?: string): string {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr.slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   // Today's sales stats from recentSales
   const todayStats = $derived.by(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = toLocalDateKey(new Date().toISOString());
     let count = 0;
     let revenue = 0;
     let cashTotal = 0;
     let cardTotal = 0;
     for (const s of recentSales) {
       if (s.status === 'cancelled') continue;
-      const dStr = (s.created_at || '').slice(0, 10);
+      const dStr = toLocalDateKey(s.created_at);
       if (dStr === todayStr) {
         count++;
         const tot = Number(s.total) || 0;
@@ -646,7 +663,7 @@
     loadingSales = true;
     try {
       const data = await restGet<any[]>(
-        `sales?location_id=eq.${locId}&select=id,invoice_no,total,discount,payment_method,status,created_at,customer_id,cashier_id,sale_items(id,variant_id,quantity,unit_price,discount)&order=created_at.desc&limit=25`,
+        `sales?location_id=eq.${locId}&select=id,invoice_no,total,discount,payment_method,status,created_at,customer_id,cashier_id,customers(id,name,phone),sale_items(id,variant_id,quantity,unit_price,cost_price,discount,product_variants(id,sku,size,colour,barcode,products(name,brand,category)))&order=created_at.desc&limit=50`,
       );
       recentSales = data || [];
     } catch (e) {
@@ -656,25 +673,135 @@
     }
   }
 
-  function buildReceiptFromPastSale(s: any): PosReceiptDetails {
-    const branchName = activeLoc?.name || 'Fashion Feet';
-    const staffObj = app.allStaff.find((st) => st.id === s.cashier_id);
-    const items = (s.sale_items || []).map((si: any) => {
+  function resolveSaleItems(s: any) {
+    return (s.sale_items || []).map((si: any) => {
+      const pv = Array.isArray(si.product_variants) ? si.product_variants[0] : si.product_variants;
+      const prod = pv?.products ? (Array.isArray(pv.products) ? pv.products[0] : pv.products) : null;
       const v = app.catalog.find((c) => c.id === si.variant_id);
-      const uPrice = Number(si.unit_price) || 0;
-      const q = Number(si.quantity) || 1;
+      const sku = pv?.sku || v?.sku || 'ITEM';
+      const name = prod?.name || v?.products?.name || sku || 'Shoe Item';
+      const brand = prod?.brand || v?.products?.brand || '';
+      const category = prod?.category || v?.products?.category || '';
+      const rawSize = pv?.size ?? v?.size ?? '';
+      const displaySize = getShoeDisplaySize(rawSize, prod || v?.products);
+      const colour = pv?.colour || v?.colour || '';
+      const qty = Number(si.quantity) || 1;
+      const unitPrice = Number(si.unit_price) || 0;
+      const itemDisc = Number(si.discount) || 0;
       return {
-        sku: v?.sku || 'ITEM',
-        name: v?.products?.name || v?.sku || 'Shoe Item',
-        brand: v?.products?.brand || '',
-        size: v?.size || '',
-        displaySize: getShoeDisplaySize(v?.size, v?.products),
-        colour: v?.colour || '',
-        qty: q,
-        unitPrice: uPrice,
-        lineTotal: uPrice * q,
+        id: si.id || `${s.id}_${si.variant_id}`,
+        variantId: si.variant_id,
+        sku,
+        name,
+        brand,
+        category,
+        size: String(rawSize || ''),
+        displaySize,
+        colour,
+        qty,
+        unitPrice,
+        itemDiscount: itemDisc,
+        lineTotal: unitPrice * qty,
       };
     });
+  }
+
+  function resolveSaleCustomer(s: any): PosCustomer | null {
+    const c = Array.isArray(s.customers) ? s.customers[0] : s.customers;
+    if (c && (c.name || c.phone)) {
+      return { id: c.id || s.customer_id || '', name: c.name || 'Customer', phone: c.phone || '' };
+    }
+    return null;
+  }
+
+  function resolveCashierName(s: any): string {
+    const staffObj = app.allStaff.find((st) => st.id === s.cashier_id);
+    if (staffObj?.name) return staffObj.name;
+    if (app.currentUser?.id && app.currentUser.id === s.cashier_id) return app.currentUser.name;
+    return 'Staff';
+  }
+
+  function toggleExpandSale(saleId: string) {
+    expandedSaleIds[saleId] = !expandedSaleIds[saleId];
+  }
+
+  const filteredRecentSales = $derived.by(() => {
+    const now = new Date();
+    const todayKey = toLocalDateKey(now.toISOString());
+    const yestDate = new Date(now.getTime() - 86400000);
+    const yesterdayKey = toLocalDateKey(yestDate.toISOString());
+    const sevenDaysAgoMs = now.getTime() - 7 * 86400000;
+    const q = recentSearch.trim().toUpperCase();
+
+    return recentSales.filter((s) => {
+      // Date filter
+      if (recentDateFilter === 'today') {
+        if (toLocalDateKey(s.created_at) !== todayKey) return false;
+      } else if (recentDateFilter === 'yesterday') {
+        if (toLocalDateKey(s.created_at) !== yesterdayKey) return false;
+      } else if (recentDateFilter === '7days') {
+        const t = new Date(s.created_at).getTime();
+        if (isNaN(t) || t < sevenDaysAgoMs) return false;
+      }
+
+      // Payment filter
+      if (recentPaymentFilter !== 'all') {
+        const pm = String(s.payment_method || 'cash').toLowerCase();
+        if (pm !== recentPaymentFilter) return false;
+      }
+
+      // Search filter (Invoice No, SKU, Shoe Name, Brand, Size, Colour, Customer)
+      if (q) {
+        const invStr = formatInvoiceNo(s.invoice_no, s.id).toUpperCase();
+        const rawInv = String(s.invoice_no || '').toUpperCase();
+        const cust = resolveSaleCustomer(s);
+        const custMatch =
+          (cust?.name && cust.name.toUpperCase().includes(q)) ||
+          (cust?.phone && cust.phone.toUpperCase().includes(q));
+        const items = resolveSaleItems(s);
+        const itemMatch = items.some(
+          (it: any) =>
+            it.sku.toUpperCase().includes(q) ||
+            it.name.toUpperCase().includes(q) ||
+            it.brand.toUpperCase().includes(q) ||
+            it.displaySize.toUpperCase().includes(q) ||
+            it.colour.toUpperCase().includes(q),
+        );
+        if (!invStr.includes(q) && !rawInv.includes(q) && !custMatch && !itemMatch) {
+          return false;
+        }
+      }
+      return true;
+    });
+  });
+
+  const filteredSalesStats = $derived.by(() => {
+    let activeBills = 0;
+    let totalPairsSold = 0;
+    let totalRevenue = 0;
+    let cashRev = 0;
+    let cardRev = 0;
+    let totalDisc = 0;
+    for (const s of filteredRecentSales) {
+      if (s.status === 'cancelled') continue;
+      activeBills++;
+      const tot = Number(s.total) || 0;
+      const disc = Number(s.discount) || 0;
+      totalRevenue += tot;
+      totalDisc += disc;
+      if (s.payment_method === 'card') cardRev += tot;
+      else cashRev += tot;
+      for (const si of s.sale_items || []) {
+        totalPairsSold += Number(si.quantity) || 0;
+      }
+    }
+    return { activeBills, totalPairsSold, totalRevenue, cashRev, cardRev, totalDisc };
+  });
+
+  function buildReceiptFromPastSale(s: any): PosReceiptDetails {
+    const branchName = activeLoc?.name || 'Fashion Feet';
+    const items = resolveSaleItems(s);
+    const cust = resolveSaleCustomer(s);
     const tot = Number(s.total) || 0;
     const disc = Number(s.discount) || 0;
     return {
@@ -689,7 +816,9 @@
       }),
       locationId,
       branchName,
-      cashierName: staffObj?.name || 'Staff',
+      cashierName: resolveCashierName(s),
+      customer: cust,
+      customerPhone: cust?.phone || '',
       paymentMethod: s.payment_method || 'cash',
       subtotal: tot + disc,
       discount: disc,
@@ -1444,55 +1573,328 @@
     </div>
   </div>
 
-  <!-- RECENT POS BILLS / SALES REGISTER -->
+  <!-- RECENT POS BILLS / SALES REGISTER (DETAIL-WISE & COMPACT VIEWS) -->
   <div class="card overflow-hidden">
-    <div class="flex items-center justify-between border-b border-line bg-raised/40 px-4 py-3">
+    <!-- Header & View Mode Toggle -->
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-raised/40 px-4 py-3">
       <div>
         <h2 class="text-xs font-bold uppercase tracking-wider text-fg">
-          Recent Branch POS Bills ({activeLoc?.name || 'Branch'})
+          Recent Branch POS Bills — Detail View ({activeLoc?.name || 'Branch'})
         </h2>
         <p class="text-[11px] text-dim">
-          Reprint on Counter PC printer, send WhatsApp receipt, or cancel mistaken bills
+          බිල්පත් වල අලෙවි වූ සපත්තු (SKU, Size, Colour, Price) සවිස්තරාත්මකව බලන්න
         </p>
       </div>
-      <button
-        type="button"
-        class="btn btn-sm h-8"
-        onclick={() => fetchRecentSales(locationId)}
-        disabled={loadingSales}
-      >
-        <RefreshCw class="h-3.5 w-3.5 {loadingSales ? 'animate-spin' : ''}" />
-        <span>Refresh</span>
-      </button>
+
+      <div class="flex flex-wrap items-center gap-1.5">
+        <!-- View Mode Toggle -->
+        <div class="inline-flex rounded-lg border border-line bg-surface p-0.5">
+          <button
+            type="button"
+            class="cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-bold transition
+              {recentViewMode === 'detailed' ? 'bg-fg text-bg shadow-xs' : 'text-muted hover:text-fg'}"
+            onclick={() => (recentViewMode = 'detailed')}
+          >
+            Detailed (සවිස්තරව)
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-bold transition
+              {recentViewMode === 'compact' ? 'bg-fg text-bg shadow-xs' : 'text-muted hover:text-fg'}"
+            onclick={() => (recentViewMode = 'compact')}
+          >
+            Compact (කෙටියෙන්)
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-sm h-8"
+          onclick={() => fetchRecentSales(locationId)}
+          disabled={loadingSales}
+        >
+          <RefreshCw class="h-3.5 w-3.5 {loadingSales ? 'animate-spin' : ''}" />
+          <span>Refresh</span>
+        </button>
+      </div>
     </div>
 
-    {#if recentSales.length === 0}
+    <!-- Filter Bar (Date, Payment Method, Search) -->
+    <div class="border-b border-line bg-surface/60 px-4 py-2.5 space-y-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <!-- Date Filter Pills -->
+        <div class="flex flex-wrap items-center gap-1">
+          {#each [
+            { id: 'all', label: 'All Recent (50)' },
+            { id: 'today', label: 'Today (අද)' },
+            { id: 'yesterday', label: 'Yesterday (ඊයේ)' },
+            { id: '7days', label: 'Last 7 Days' },
+          ] as df}
+            <button
+              type="button"
+              class="cursor-pointer rounded-md border px-2.5 py-1 text-[11px] font-semibold transition
+                {recentDateFilter === df.id
+                  ? 'border-fg bg-fg text-bg'
+                  : 'border-line bg-raised text-muted hover:text-fg'}"
+              onclick={() => (recentDateFilter = df.id as any)}
+            >
+              {df.label}
+            </button>
+          {/each}
+        </div>
+
+        <!-- Payment Filter Pills -->
+        <div class="flex items-center gap-1">
+          {#each [
+            { id: 'all', label: 'All Pay' },
+            { id: 'cash', label: 'Cash' },
+            { id: 'card', label: 'Card' },
+          ] as pf}
+            <button
+              type="button"
+              class="cursor-pointer rounded-md border px-2 py-1 text-[11px] font-semibold transition
+                {recentPaymentFilter === pf.id
+                  ? 'border-fg bg-fg text-bg'
+                  : 'border-line bg-raised text-muted hover:text-fg'}"
+              onclick={() => (recentPaymentFilter = pf.id as any)}
+            >
+              {pf.label}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <!-- Search Input + Filtered Totals Strip -->
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div class="relative flex-1 max-w-md">
+          <Search class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dim" />
+          <input
+            type="text"
+            class="input h-8 pl-8 pr-7 text-xs"
+            placeholder="Search by Invoice No, Shoe Code/SKU, Brand, Size, Colour..."
+            bind:value={recentSearch}
+          />
+          {#if recentSearch}
+            <button
+              type="button"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-dim hover:text-fg"
+              onclick={() => (recentSearch = '')}
+            >
+              <X class="h-3.5 w-3.5" />
+            </button>
+          {/if}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+          <span class="chip py-0.5">
+            Bills: <strong class="text-fg ml-1">{filteredSalesStats.activeBills}</strong>
+          </span>
+          <span class="chip py-0.5">
+            Pairs: <strong class="text-fg ml-1">{filteredSalesStats.totalPairsSold}</strong>
+          </span>
+          <span class="chip py-0.5">
+            Cash: <strong class="text-ok ml-1">{fmtMoney(filteredSalesStats.cashRev)}</strong>
+          </span>
+          <span class="chip py-0.5">
+            Card: <strong class="text-fg ml-1">{fmtMoney(filteredSalesStats.cardRev)}</strong>
+          </span>
+          <span class="chip py-0.5 border-fg/30 bg-raised font-bold text-fg">
+            Total: {fmtMoney(filteredSalesStats.totalRevenue)}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {#if filteredRecentSales.length === 0}
       <div class="p-8 text-center text-xs text-muted">
-        {loadingSales ? 'Loading recent branch bills...' : 'No POS sales recorded at this branch yet.'}
+        {loadingSales
+          ? 'Loading recent branch bills...'
+          : 'No matching POS bills found for the selected filter.'}
+      </div>
+    {:else if recentViewMode === 'detailed'}
+      <!-- DETAILED BILL-BY-BILL CARDS VIEW -->
+      <div class="divide-y divide-line">
+        {#each filteredRecentSales as s (s.id)}
+          {@const isCancelled = s.status === 'cancelled'}
+          {@const items = resolveSaleItems(s)}
+          {@const itemCount = items.reduce((n: number, i: any) => n + i.qty, 0)}
+          {@const cust = resolveSaleCustomer(s)}
+          {@const cashierName = resolveCashierName(s)}
+          {@const saleTotal = Number(s.total) || 0}
+          {@const saleDisc = Number(s.discount) || 0}
+          <div class="p-3.5 sm:p-4 hover:bg-raised/20 transition {isCancelled ? 'opacity-55' : ''}">
+            <!-- Bill Header Row -->
+            <div class="flex flex-wrap items-start justify-between gap-2 pb-2.5 border-b border-line/70">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-md bg-fg px-2 py-0.5 font-mono text-xs font-bold text-bg">
+                  {formatInvoiceNo(s.invoice_no, s.id)}
+                </span>
+                {#if isCancelled}
+                  <span class="chip border-bad/40 bg-bad/15 text-bad text-[10px] font-bold py-0">
+                    CANCELLED
+                  </span>
+                {/if}
+                <span class="text-xs font-medium text-muted">
+                  {new Date(s.created_at).toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+                <span class="chip py-0 text-[10px] uppercase font-mono font-bold">
+                  {s.payment_method || 'cash'}
+                </span>
+                <span class="text-[11px] text-dim">
+                  Cashier: <strong class="text-fg">{cashierName}</strong>
+                </span>
+                {#if cust}
+                  <span class="chip py-0 text-[10px] text-fg">
+                    Customer: {cust.name}{cust.phone ? ` (${cust.phone})` : ''}
+                  </span>
+                {/if}
+              </div>
+
+              <!-- Right Totals & Actions -->
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="text-right mr-1">
+                  {#if saleDisc > 0}
+                    <div class="font-mono text-[10px] text-warn">
+                      Subtotal: {fmtMoney(saleTotal + saleDisc)} · Disc: -{fmtMoney(saleDisc)}
+                    </div>
+                  {/if}
+                  <div class="font-mono text-sm font-black text-fg">
+                    {fmtMoney(saleTotal)}
+                    <span class="ml-1 font-sans text-[11px] font-normal text-muted">
+                      ({itemCount} pair{itemCount === 1 ? '' : 's'})
+                    </span>
+                  </div>
+                </div>
+
+                <div class="inline-flex items-center gap-1.5">
+                  {#if !isCancelled}
+                    <button
+                      type="button"
+                      class="btn btn-sm h-7 px-2.5 text-[11px]"
+                      onclick={() => reprintPastSaleOnPc(s)}
+                      disabled={sendingPcSaleId === s.id}
+                      title="Print on Counter PC Thermal Printer"
+                    >
+                      {#if sendingPcSaleId === s.id}
+                        <Loader2 class="h-3 w-3 animate-spin" />
+                      {:else}
+                        <Printer class="h-3 w-3 text-ok" />
+                      {/if}
+                      <span>PC Print</span>
+                    </button>
+                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-sm h-7 px-2.5 text-[11px]"
+                    onclick={() => openPastSaleReceipt(s)}
+                  >
+                    <Receipt class="h-3 w-3 text-ok" />
+                    <span>Receipt / WhatsApp</span>
+                  </button>
+                  {#if !isCancelled}
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm h-7 px-2 text-[11px] text-dim hover:text-bad"
+                      onclick={() => voidSale(s)}
+                      disabled={voidingSaleId === s.id}
+                      title="Cancel bill and restore stock"
+                    >
+                      <Ban class="h-3 w-3" />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            </div>
+
+            <!-- Detailed Items Breakdown Table inside Bill Card -->
+            <div class="mt-2.5 overflow-x-auto rounded-lg border border-line bg-surface">
+              <table class="w-full text-xs">
+                <thead class="bg-raised/70 border-b border-line text-[10px] uppercase text-dim">
+                  <tr>
+                    <th class="py-1.5 pl-3 text-left font-semibold">#</th>
+                    <th class="py-1.5 text-left font-semibold">Shoe Model / Brand</th>
+                    <th class="py-1.5 text-left font-semibold">SKU / Code</th>
+                    <th class="py-1.5 text-center font-semibold">Size</th>
+                    <th class="py-1.5 text-center font-semibold">Colour</th>
+                    <th class="py-1.5 text-center font-semibold">Qty</th>
+                    <th class="py-1.5 text-right font-semibold">Unit Price</th>
+                    <th class="py-1.5 pr-3 text-right font-semibold">Line Total</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-line/60">
+                  {#each items as it, idx}
+                    <tr class="hover:bg-raised/30">
+                      <td class="py-1.5 pl-3 font-mono text-[11px] text-dim">{idx + 1}</td>
+                      <td class="py-1.5 font-semibold text-fg">
+                        {#if it.brand}
+                          <span class="text-muted font-normal">{it.brand} · </span>
+                        {/if}
+                        {it.name}
+                      </td>
+                      <td class="py-1.5 font-mono text-[11px] font-semibold text-fg">{it.sku}</td>
+                      <td class="py-1.5 text-center">
+                        <span class="chip py-0 px-1.5 font-mono text-[11px] font-bold text-fg">
+                          Sz {it.displaySize}
+                        </span>
+                      </td>
+                      <td class="py-1.5 text-center font-mono text-[11px] text-muted">
+                        {it.colour || '-'}
+                      </td>
+                      <td class="py-1.5 text-center font-mono font-bold text-fg">{it.qty}</td>
+                      <td class="py-1.5 text-right font-mono text-muted">
+                        Rs. {it.unitPrice.toLocaleString()}
+                      </td>
+                      <td class="py-1.5 pr-3 text-right font-mono font-bold text-fg">
+                        Rs. {it.lineTotal.toLocaleString()}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {/each}
       </div>
     {:else}
+      <!-- COMPACT TABLE VIEW WITH EXPANDABLE DETAIL ROWS -->
       <div class="overflow-x-auto">
         <table class="w-full text-xs">
           <thead class="bg-raised border-b border-line">
             <tr>
               <th class="th py-2.5 pl-4">Invoice</th>
               <th class="th py-2.5">Date &amp; Time</th>
-              <th class="th py-2.5">Items</th>
+              <th class="th py-2.5">Items Summary</th>
               <th class="th py-2.5 text-center">Payment</th>
               <th class="th py-2.5 text-right">Total</th>
               <th class="th py-2.5 pr-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line">
-            {#each recentSales as s (s.id)}
+            {#each filteredRecentSales as s (s.id)}
               {@const isCancelled = s.status === 'cancelled'}
-              {@const itemCount = (s.sale_items || []).reduce((n: number, i: any) => n + (Number(i.quantity) || 0), 0)}
-              <tr class="hover:bg-raised/30 {isCancelled ? 'opacity-50' : ''}">
+              {@const items = resolveSaleItems(s)}
+              {@const itemCount = items.reduce((n: number, i: any) => n + i.qty, 0)}
+              {@const isExpanded = Boolean(expandedSaleIds[s.id])}
+              <tr
+                class="cursor-pointer hover:bg-raised/30 {isCancelled ? 'opacity-50' : ''}"
+                onclick={() => toggleExpandSale(s.id)}
+              >
                 <td class="td py-2.5 pl-4 font-mono font-bold text-fg">
-                  {formatInvoiceNo(s.invoice_no, s.id)}
-                  {#if isCancelled}
-                    <span class="ml-1 chip border-bad/30 bg-bad/10 text-bad text-[9px] py-0">CANCELLED</span>
-                  {/if}
+                  <div class="inline-flex items-center gap-1.5">
+                    <ChevronDown
+                      class="h-3.5 w-3.5 text-muted transition-transform {isExpanded ? 'rotate-180 text-fg' : ''}"
+                    />
+                    <span>{formatInvoiceNo(s.invoice_no, s.id)}</span>
+                    {#if isCancelled}
+                      <span class="ml-1 chip border-bad/30 bg-bad/10 text-bad text-[9px] py-0">CANCELLED</span>
+                    {/if}
+                  </div>
                 </td>
                 <td class="td py-2.5 text-muted">
                   {new Date(s.created_at).toLocaleString('en-GB', {
@@ -1502,8 +1904,13 @@
                     minute: '2-digit',
                   })}
                 </td>
-                <td class="td py-2.5 font-mono text-muted">
-                  {itemCount} pair{itemCount === 1 ? '' : 's'}
+                <td class="td py-2.5 text-muted">
+                  <span class="font-mono font-semibold text-fg">{itemCount} pair{itemCount === 1 ? '' : 's'}</span>
+                  {#if items.length > 0}
+                    <span class="ml-1.5 text-[11px] text-dim">
+                      ({items.map((i: any) => `${i.sku} Sz ${i.displaySize}`).join(', ')})
+                    </span>
+                  {/if}
                 </td>
                 <td class="td py-2.5 text-center">
                   <span class="chip py-0 text-[10px] uppercase font-mono">{s.payment_method || 'cash'}</span>
@@ -1511,8 +1918,15 @@
                 <td class="td py-2.5 text-right font-mono font-bold text-fg">
                   {fmtMoney(Number(s.total) || 0)}
                 </td>
-                <td class="td py-2.5 pr-4 text-right">
+                <td class="td py-2.5 pr-4 text-right" onclick={(e) => e.stopPropagation()}>
                   <div class="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      class="btn btn-sm h-7 px-2 text-[11px]"
+                      onclick={() => toggleExpandSale(s.id)}
+                    >
+                      <span>{isExpanded ? 'Hide' : 'Details'}</span>
+                    </button>
                     {#if !isCancelled}
                       <button
                         type="button"
@@ -1551,6 +1965,46 @@
                   </div>
                 </td>
               </tr>
+              {#if isExpanded}
+                <tr class="bg-raised/40">
+                  <td colspan="6" class="p-3">
+                    <div class="overflow-x-auto rounded-lg border border-line bg-surface">
+                      <table class="w-full text-xs">
+                        <thead class="bg-raised border-b border-line text-[10px] uppercase text-dim">
+                          <tr>
+                            <th class="py-1.5 pl-3 text-left">#</th>
+                            <th class="py-1.5 text-left">Shoe Model / Brand</th>
+                            <th class="py-1.5 text-left">SKU</th>
+                            <th class="py-1.5 text-center">Size</th>
+                            <th class="py-1.5 text-center">Colour</th>
+                            <th class="py-1.5 text-center">Qty</th>
+                            <th class="py-1.5 text-right">Unit Price</th>
+                            <th class="py-1.5 pr-3 text-right">Line Total</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-line/60">
+                          {#each items as it, idx}
+                            <tr>
+                              <td class="py-1.5 pl-3 font-mono text-dim">{idx + 1}</td>
+                              <td class="py-1.5 font-semibold text-fg">
+                                {it.brand ? `${it.brand} · ` : ''}{it.name}
+                              </td>
+                              <td class="py-1.5 font-mono text-fg">{it.sku}</td>
+                              <td class="py-1.5 text-center font-mono font-bold text-fg">Sz {it.displaySize}</td>
+                              <td class="py-1.5 text-center font-mono text-muted">{it.colour || '-'}</td>
+                              <td class="py-1.5 text-center font-mono font-bold">{it.qty}</td>
+                              <td class="py-1.5 text-right font-mono text-muted">Rs. {it.unitPrice.toLocaleString()}</td>
+                              <td class="py-1.5 pr-3 text-right font-mono font-bold text-fg">
+                                Rs. {it.lineTotal.toLocaleString()}
+                              </td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              {/if}
             {/each}
           </tbody>
         </table>
