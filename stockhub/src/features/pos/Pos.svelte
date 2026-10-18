@@ -1573,25 +1573,36 @@
     </div>
   </div>
 
-  <!-- RECENT POS BILLS / SALES REGISTER (DETAIL-WISE & COMPACT VIEWS) -->
+  <!-- RECENT POS BILLS / SALES REGISTER (MOBILE-FIRST DETAIL & COMPACT VIEWS) -->
   <div class="card overflow-hidden">
     <!-- Header & View Mode Toggle -->
-    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-raised/40 px-4 py-3">
-      <div>
-        <h2 class="text-xs font-bold uppercase tracking-wider text-fg">
-          Recent Branch POS Bills — Detail View ({activeLoc?.name || 'Branch'})
-        </h2>
-        <p class="text-[11px] text-dim">
-          බිල්පත් වල අලෙවි වූ සපත්තු (SKU, Size, Colour, Price) සවිස්තරාත්මකව බලන්න
-        </p>
+    <div class="border-b border-line bg-raised/40 p-3 sm:px-4 sm:py-3 space-y-2.5 sm:space-y-0 sm:flex sm:items-center sm:justify-between gap-2">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-fg truncate">
+            Recent POS Bills ({activeLoc?.name || 'Branch'})
+          </h2>
+          <p class="text-[11px] text-dim">
+            බිල්පත් වල අලෙවි වූ සපත්තු (SKU, Size, Colour, Price) සවිස්තරාත්මකව
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm h-8 shrink-0 sm:hidden px-2.5"
+          onclick={() => fetchRecentSales(locationId)}
+          disabled={loadingSales}
+        >
+          <RefreshCw class="h-3.5 w-3.5 {loadingSales ? 'animate-spin' : ''}" />
+          <span>Refresh</span>
+        </button>
       </div>
 
-      <div class="flex flex-wrap items-center gap-1.5">
-        <!-- View Mode Toggle -->
-        <div class="inline-flex rounded-lg border border-line bg-surface p-0.5">
+      <div class="flex items-center gap-1.5">
+        <!-- View Mode Toggle (Full width 2-col on mobile) -->
+        <div class="grid flex-1 grid-cols-2 rounded-lg border border-line bg-surface p-0.5 sm:inline-flex sm:flex-initial">
           <button
             type="button"
-            class="cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-bold transition
+            class="cursor-pointer rounded-md px-2.5 py-1.5 sm:py-1 text-[11px] font-bold transition text-center
               {recentViewMode === 'detailed' ? 'bg-fg text-bg shadow-xs' : 'text-muted hover:text-fg'}"
             onclick={() => (recentViewMode = 'detailed')}
           >
@@ -1599,7 +1610,7 @@
           </button>
           <button
             type="button"
-            class="cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-bold transition
+            class="cursor-pointer rounded-md px-2.5 py-1.5 sm:py-1 text-[11px] font-bold transition text-center
               {recentViewMode === 'compact' ? 'bg-fg text-bg shadow-xs' : 'text-muted hover:text-fg'}"
             onclick={() => (recentViewMode = 'compact')}
           >
@@ -1609,7 +1620,7 @@
 
         <button
           type="button"
-          class="btn btn-sm h-8"
+          class="btn btn-sm hidden h-8 sm:inline-flex"
           onclick={() => fetchRecentSales(locationId)}
           disabled={loadingSales}
         >
@@ -1619,20 +1630,20 @@
       </div>
     </div>
 
-    <!-- Filter Bar (Date, Payment Method, Search) -->
-    <div class="border-b border-line bg-surface/60 px-4 py-2.5 space-y-2.5">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <!-- Date Filter Pills -->
-        <div class="flex flex-wrap items-center gap-1">
+    <!-- Filter Bar (Date, Payment Method, Search, Summary KPIs) -->
+    <div class="border-b border-line bg-surface/60 p-3 sm:px-4 sm:py-2.5 space-y-2">
+      <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+        <!-- Date Filter Pills (4-col grid on mobile) -->
+        <div class="grid grid-cols-4 gap-1 sm:flex sm:flex-wrap">
           {#each [
-            { id: 'all', label: 'All Recent (50)' },
-            { id: 'today', label: 'Today (අද)' },
-            { id: 'yesterday', label: 'Yesterday (ඊයේ)' },
-            { id: '7days', label: 'Last 7 Days' },
+            { id: 'all', label: 'All (50)' },
+            { id: 'today', label: 'Today' },
+            { id: 'yesterday', label: 'Yesterday' },
+            { id: '7days', label: '7 Days' },
           ] as df}
             <button
               type="button"
-              class="cursor-pointer rounded-md border px-2.5 py-1 text-[11px] font-semibold transition
+              class="cursor-pointer rounded-md border px-1.5 py-1.5 sm:px-2.5 sm:py-1 text-[11px] font-semibold transition text-center truncate
                 {recentDateFilter === df.id
                   ? 'border-fg bg-fg text-bg'
                   : 'border-line bg-raised text-muted hover:text-fg'}"
@@ -1643,8 +1654,8 @@
           {/each}
         </div>
 
-        <!-- Payment Filter Pills -->
-        <div class="flex items-center gap-1">
+        <!-- Payment Filter Pills (3-col grid on mobile) -->
+        <div class="grid grid-cols-3 gap-1 sm:flex sm:items-center">
           {#each [
             { id: 'all', label: 'All Pay' },
             { id: 'cash', label: 'Cash' },
@@ -1652,7 +1663,7 @@
           ] as pf}
             <button
               type="button"
-              class="cursor-pointer rounded-md border px-2 py-1 text-[11px] font-semibold transition
+              class="cursor-pointer rounded-md border px-2 py-1 text-[11px] font-semibold transition text-center
                 {recentPaymentFilter === pf.id
                   ? 'border-fg bg-fg text-bg'
                   : 'border-line bg-raised text-muted hover:text-fg'}"
@@ -1666,12 +1677,12 @@
 
       <!-- Search Input + Filtered Totals Strip -->
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div class="relative flex-1 max-w-md">
+        <div class="relative w-full sm:max-w-md">
           <Search class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dim" />
           <input
             type="text"
-            class="input h-8 pl-8 pr-7 text-xs"
-            placeholder="Search by Invoice No, Shoe Code/SKU, Brand, Size, Colour..."
+            class="input h-9 sm:h-8 pl-8 pr-7 text-xs w-full"
+            placeholder="Search Invoice No, SKU, Brand, Size..."
             bind:value={recentSearch}
           />
           {#if recentSearch}
@@ -1685,22 +1696,24 @@
           {/if}
         </div>
 
-        <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono">
-          <span class="chip py-0.5">
-            Bills: <strong class="text-fg ml-1">{filteredSalesStats.activeBills}</strong>
-          </span>
-          <span class="chip py-0.5">
-            Pairs: <strong class="text-fg ml-1">{filteredSalesStats.totalPairsSold}</strong>
-          </span>
-          <span class="chip py-0.5">
-            Cash: <strong class="text-ok ml-1">{fmtMoney(filteredSalesStats.cashRev)}</strong>
-          </span>
-          <span class="chip py-0.5">
-            Card: <strong class="text-fg ml-1">{fmtMoney(filteredSalesStats.cardRev)}</strong>
-          </span>
-          <span class="chip py-0.5 border-fg/30 bg-raised font-bold text-fg">
-            Total: {fmtMoney(filteredSalesStats.totalRevenue)}
-          </span>
+        <!-- Mobile-Responsive KPI Summary Grid -->
+        <div class="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center text-[11px] font-mono">
+          <div class="rounded-md border border-line bg-raised px-2.5 py-1 flex items-center justify-between sm: gap-1.5">
+            <span class="text-muted">Bills / Pairs:</span>
+            <strong class="text-fg">{filteredSalesStats.activeBills} ({filteredSalesStats.totalPairsSold} prs)</strong>
+          </div>
+          <div class="rounded-md border border-line bg-raised px-2.5 py-1 flex items-center justify-between sm:gap-1.5">
+            <span class="text-muted">Cash:</span>
+            <strong class="text-ok">{fmtMoney(filteredSalesStats.cashRev)}</strong>
+          </div>
+          <div class="rounded-md border border-line bg-raised px-2.5 py-1 flex items-center justify-between sm:gap-1.5">
+            <span class="text-muted">Card:</span>
+            <strong class="text-fg">{fmtMoney(filteredSalesStats.cardRev)}</strong>
+          </div>
+          <div class="rounded-md border border-fg/30 bg-raised px-2.5 py-1 flex items-center justify-between sm:gap-1.5 font-bold text-fg">
+            <span>Total:</span>
+            <span>{fmtMoney(filteredSalesStats.totalRevenue)}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1722,19 +1735,24 @@
           {@const cashierName = resolveCashierName(s)}
           {@const saleTotal = Number(s.total) || 0}
           {@const saleDisc = Number(s.discount) || 0}
-          <div class="p-3.5 sm:p-4 hover:bg-raised/20 transition {isCancelled ? 'opacity-55' : ''}">
-            <!-- Bill Header Row -->
-            <div class="flex flex-wrap items-start justify-between gap-2 pb-2.5 border-b border-line/70">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="rounded-md bg-fg px-2 py-0.5 font-mono text-xs font-bold text-bg">
-                  {formatInvoiceNo(s.invoice_no, s.id)}
-                </span>
-                {#if isCancelled}
-                  <span class="chip border-bad/40 bg-bad/15 text-bad text-[10px] font-bold py-0">
-                    CANCELLED
+          <div class="p-3 sm:p-4 hover:bg-raised/20 transition space-y-2.5 {isCancelled ? 'opacity-55' : ''}">
+            <!-- Bill Header Row (Clean 2-side layout on Mobile & Desktop) -->
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 space-y-1">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="rounded-md bg-fg px-2 py-0.5 font-mono text-xs font-bold text-bg">
+                    {formatInvoiceNo(s.invoice_no, s.id)}
                   </span>
-                {/if}
-                <span class="text-xs font-medium text-muted">
+                  <span class="chip py-0 px-1.5 text-[10px] uppercase font-mono font-bold">
+                    {s.payment_method || 'cash'}
+                  </span>
+                  {#if isCancelled}
+                    <span class="chip border-bad/40 bg-bad/15 text-bad text-[10px] font-bold py-0">
+                      CANCELLED
+                    </span>
+                  {/if}
+                </div>
+                <div class="text-[11px] text-muted">
                   {new Date(s.created_at).toLocaleString('en-GB', {
                     day: '2-digit',
                     month: 'short',
@@ -1742,78 +1760,73 @@
                     hour: '2-digit',
                     minute: '2-digit',
                   })}
-                </span>
-                <span class="chip py-0 text-[10px] uppercase font-mono font-bold">
-                  {s.payment_method || 'cash'}
-                </span>
-                <span class="text-[11px] text-dim">
-                  Cashier: <strong class="text-fg">{cashierName}</strong>
-                </span>
+                  <span class="mx-1">·</span>
+                  <span>Cashier: <strong class="text-fg">{cashierName}</strong></span>
+                </div>
                 {#if cust}
-                  <span class="chip py-0 text-[10px] text-fg">
+                  <div class="text-[11px] text-fg font-medium">
                     Customer: {cust.name}{cust.phone ? ` (${cust.phone})` : ''}
-                  </span>
+                  </div>
                 {/if}
               </div>
 
-              <!-- Right Totals & Actions -->
-              <div class="flex flex-wrap items-center gap-2">
-                <div class="text-right mr-1">
-                  {#if saleDisc > 0}
-                    <div class="font-mono text-[10px] text-warn">
-                      Subtotal: {fmtMoney(saleTotal + saleDisc)} · Disc: -{fmtMoney(saleDisc)}
-                    </div>
-                  {/if}
-                  <div class="font-mono text-sm font-black text-fg">
-                    {fmtMoney(saleTotal)}
-                    <span class="ml-1 font-sans text-[11px] font-normal text-muted">
-                      ({itemCount} pair{itemCount === 1 ? '' : 's'})
-                    </span>
+              <!-- Right Grand Total -->
+              <div class="text-right shrink-0">
+                <div class="font-mono text-sm sm:text-base font-black text-fg">
+                  {fmtMoney(saleTotal)}
+                </div>
+                <div class="text-[11px] text-muted font-mono">
+                  {itemCount} pair{itemCount === 1 ? '' : 's'}
+                </div>
+                {#if saleDisc > 0}
+                  <div class="font-mono text-[10px] text-warn">
+                    Disc: -{fmtMoney(saleDisc)}
                   </div>
-                </div>
-
-                <div class="inline-flex items-center gap-1.5">
-                  {#if !isCancelled}
-                    <button
-                      type="button"
-                      class="btn btn-sm h-7 px-2.5 text-[11px]"
-                      onclick={() => reprintPastSaleOnPc(s)}
-                      disabled={sendingPcSaleId === s.id}
-                      title="Print on Counter PC Thermal Printer"
-                    >
-                      {#if sendingPcSaleId === s.id}
-                        <Loader2 class="h-3 w-3 animate-spin" />
-                      {:else}
-                        <Printer class="h-3 w-3 text-ok" />
-                      {/if}
-                      <span>PC Print</span>
-                    </button>
-                  {/if}
-                  <button
-                    type="button"
-                    class="btn btn-sm h-7 px-2.5 text-[11px]"
-                    onclick={() => openPastSaleReceipt(s)}
-                  >
-                    <Receipt class="h-3 w-3 text-ok" />
-                    <span>Receipt / WhatsApp</span>
-                  </button>
-                  {#if !isCancelled}
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm h-7 px-2 text-[11px] text-dim hover:text-bad"
-                      onclick={() => voidSale(s)}
-                      disabled={voidingSaleId === s.id}
-                      title="Cancel bill and restore stock"
-                    >
-                      <Ban class="h-3 w-3" />
-                    </button>
-                  {/if}
-                </div>
+                {/if}
               </div>
             </div>
 
-            <!-- Detailed Items Breakdown Table inside Bill Card -->
-            <div class="mt-2.5 overflow-x-auto rounded-lg border border-line bg-surface">
+            <!-- MOBILE STACKED ITEMS LIST (<sm: zero horizontal scroll!) -->
+            <div class="rounded-xl border border-line bg-surface divide-y divide-line sm:hidden">
+              {#each items as it, idx}
+                <div class="p-2.5 space-y-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 text-xs font-bold text-fg leading-snug">
+                      <span class="font-mono text-dim mr-1">{idx + 1}.</span>
+                      {#if it.brand}
+                        <span class="text-muted font-semibold">{it.brand} · </span>
+                      {/if}
+                      <span>{it.name}</span>
+                    </div>
+                    <div class="font-mono text-xs font-black text-fg shrink-0">
+                      Rs. {it.lineTotal.toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-between gap-1.5 pt-0.5">
+                    <div class="flex flex-wrap items-center gap-1">
+                      <span class="rounded border border-line bg-raised px-1.5 py-0.5 font-mono text-[10px] font-semibold text-fg">
+                        {it.sku}
+                      </span>
+                      <span class="rounded bg-fg/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-fg">
+                        Sz {it.displaySize}
+                      </span>
+                      {#if it.colour}
+                        <span class="rounded border border-line bg-raised px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                          {it.colour}
+                        </span>
+                      {/if}
+                    </div>
+                    <div class="font-mono text-[11px] text-muted">
+                      {it.qty} × Rs. {it.unitPrice.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+
+            <!-- DESKTOP TABLE (sm+: wide screen table) -->
+            <div class="hidden sm:block overflow-x-auto rounded-lg border border-line bg-surface">
               <table class="w-full text-xs">
                 <thead class="bg-raised/70 border-b border-line text-[10px] uppercase text-dim">
                   <tr>
@@ -1858,12 +1871,148 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- Action Buttons Row (Full-width touch bar on mobile, right-aligned on desktop) -->
+            <div class="flex items-center gap-1.5 pt-0.5 sm:justify-end">
+              {#if !isCancelled}
+                <button
+                  type="button"
+                  class="btn btn-sm h-8 flex-1 sm:flex-initial px-2.5 text-[11px] font-semibold"
+                  onclick={() => reprintPastSaleOnPc(s)}
+                  disabled={sendingPcSaleId === s.id}
+                  title="Print on Counter PC Thermal Printer"
+                >
+                  {#if sendingPcSaleId === s.id}
+                    <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                  {:else}
+                    <Printer class="h-3.5 w-3.5 text-ok" />
+                  {/if}
+                  <span>PC Print</span>
+                </button>
+              {/if}
+              <button
+                type="button"
+                class="btn btn-sm h-8 flex-1 sm:flex-initial px-2.5 text-[11px] font-semibold"
+                onclick={() => openPastSaleReceipt(s)}
+              >
+                <Receipt class="h-3.5 w-3.5 text-ok" />
+                <span>Receipt / WhatsApp</span>
+              </button>
+              {#if !isCancelled}
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm h-8 px-2.5 text-[11px] text-dim hover:text-bad shrink-0"
+                  onclick={() => voidSale(s)}
+                  disabled={voidingSaleId === s.id}
+                  title="Cancel bill and restore stock"
+                >
+                  <Ban class="h-3.5 w-3.5" />
+                </button>
+              {/if}
+            </div>
           </div>
         {/each}
       </div>
     {:else}
-      <!-- COMPACT TABLE VIEW WITH EXPANDABLE DETAIL ROWS -->
-      <div class="overflow-x-auto">
+      <!-- COMPACT VIEW: Mobile Expandable Cards (<sm) + Desktop Table (sm+) -->
+      <div class="divide-y divide-line sm:hidden">
+        {#each filteredRecentSales as s (s.id)}
+          {@const isCancelled = s.status === 'cancelled'}
+          {@const items = resolveSaleItems(s)}
+          {@const itemCount = items.reduce((n: number, i: any) => n + i.qty, 0)}
+          {@const isExpanded = Boolean(expandedSaleIds[s.id])}
+          <div class="p-3 {isCancelled ? 'opacity-55' : ''}">
+            <button
+              type="button"
+              class="flex w-full cursor-pointer items-center justify-between gap-2 text-left"
+              onclick={() => toggleExpandSale(s.id)}
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <ChevronDown
+                    class="h-3.5 w-3.5 shrink-0 text-muted transition-transform {isExpanded ? 'rotate-180 text-fg' : ''}"
+                  />
+                  <span class="font-mono text-xs font-bold text-fg">{formatInvoiceNo(s.invoice_no, s.id)}</span>
+                  <span class="chip py-0 px-1.5 text-[9px] uppercase font-mono">{s.payment_method || 'cash'}</span>
+                  {#if isCancelled}
+                    <span class="chip border-bad/30 bg-bad/10 text-bad text-[9px] py-0">CANCELLED</span>
+                  {/if}
+                </div>
+                <div class="mt-0.5 truncate pl-5 text-[11px] text-muted">
+                  {new Date(s.created_at).toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                  · {itemCount} pair{itemCount === 1 ? '' : 's'}
+                  {#if items.length > 0}
+                    ({items.map((i: any) => `${i.sku} Sz ${i.displaySize}`).join(', ')})
+                  {/if}
+                </div>
+              </div>
+              <div class="shrink-0 text-right font-mono text-xs font-black text-fg">
+                {fmtMoney(Number(s.total) || 0)}
+              </div>
+            </button>
+
+            {#if isExpanded}
+              <div class="mt-2.5 space-y-2 border-t border-line pt-2.5">
+                <div class="rounded-lg border border-line bg-surface divide-y divide-line">
+                  {#each items as it, idx}
+                    <div class="p-2 text-xs">
+                      <div class="flex items-start justify-between gap-2">
+                        <span class="font-semibold text-fg">
+                          {idx + 1}. {it.brand ? `${it.brand} · ` : ''}{it.name}
+                        </span>
+                        <span class="font-mono font-bold text-fg shrink-0">Rs. {it.lineTotal.toLocaleString()}</span>
+                      </div>
+                      <div class="mt-1 flex items-center justify-between text-[11px] font-mono text-muted">
+                        <span>{it.sku} · <strong class="text-fg">Sz {it.displaySize}</strong>{it.colour ? ` · ${it.colour}` : ''}</span>
+                        <span>{it.qty} × Rs. {it.unitPrice.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                <div class="flex items-center gap-1.5">
+                  {#if !isCancelled}
+                    <button
+                      type="button"
+                      class="btn btn-sm h-8 flex-1 text-[11px]"
+                      onclick={() => reprintPastSaleOnPc(s)}
+                      disabled={sendingPcSaleId === s.id}
+                    >
+                      <Printer class="h-3.5 w-3.5 text-ok" />
+                      <span>PC Print</span>
+                    </button>
+                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-sm h-8 flex-1 text-[11px]"
+                    onclick={() => openPastSaleReceipt(s)}
+                  >
+                    <Receipt class="h-3.5 w-3.5 text-ok" />
+                    <span>Receipt</span>
+                  </button>
+                  {#if !isCancelled}
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm h-8 px-2.5 text-dim hover:text-bad"
+                      onclick={() => voidSale(s)}
+                      disabled={voidingSaleId === s.id}
+                    >
+                      <Ban class="h-3.5 w-3.5" />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+
+      <!-- DESKTOP COMPACT TABLE VIEW (sm+) -->
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-xs">
           <thead class="bg-raised border-b border-line">
             <tr>
