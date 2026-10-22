@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app, type HubTab } from '../lib/app.svelte';
-  import { ShoppingBag, PackagePlus, ArrowLeftRight, PackageSearch, ClipboardCheck, History, Footprints } from 'lucide-svelte';
+  import { ShoppingBag, PackagePlus, ArrowLeftRight, PackageSearch, ClipboardCheck, History } from 'lucide-svelte';
 
   const items: { id: HubTab; label: string; icon: any }[] = [
     { id: 'pos', label: 'POS Bill', icon: ShoppingBag },
@@ -12,17 +12,6 @@
   ];
   const cartCount = $derived(app.cart.reduce((n, l) => n + l.qty, 0));
 </script>
-
-<!-- Mobile Floating Quick Size Finder Button -->
-<button
-  type="button"
-  class="fixed bottom-[70px] right-3 z-40 flex items-center gap-2 rounded-full border border-accent/40 bg-accent px-3.5 py-2 font-bold text-bg shadow-2xl active:scale-95 transition-all md:hidden"
-  onclick={() => (app.sizeFinderOpen = true)}
-  title="Smart Foot Size Finder & AR Caliper (කකුල මැන Size එක සෙවීම)"
->
-  <Footprints class="h-4 w-4 shrink-0" />
-  <span class="text-xs font-black tracking-tight">Size Finder</span>
-</button>
 
 <nav
   class="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"

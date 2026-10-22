@@ -4,7 +4,6 @@
     ShoppingBag, Store, ChevronDown, Check, Search, X, Camera, Zap, Plus, Minus,
     Trash2, Printer, MessageCircle, CreditCard, Banknote, QrCode, Split, User,
     Phone, RefreshCw, Receipt, Ban, Loader2, Sparkles, PackagePlus, Layers, AlertCircle,
-    Footprints, ChevronRight,
   } from 'lucide-svelte';
   import { app, getShoeDisplaySize, fmtMoney } from '../../lib/app.svelte';
   import { restGet, restWrite } from '../../lib/api';
@@ -1229,33 +1228,6 @@
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
     <!-- LEFT COLUMN: Scanner, 1-Tap Size Bar & Bill Items (7 cols) -->
     <div class="min-w-0 space-y-3.5 lg:col-span-7">
-      <!-- Foot Size Finder Quick Launch Banner -->
-      <button
-        type="button"
-        class="flex w-full items-center justify-between gap-3 rounded-2xl border-2 border-accent/40 bg-gradient-to-r from-accent/15 via-surface to-accent/10 p-3 text-fg hover:border-accent shadow-sm active:scale-[0.99] transition-all cursor-pointer"
-        onclick={() => (app.sizeFinderOpen = true)}
-        title="Smart Foot Size Finder & AR Caliper"
-      >
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-bg shadow-sm">
-            <Footprints class="h-5 w-5" />
-          </div>
-          <div class="min-w-0 text-left">
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-xs sm:text-sm font-bold text-fg">Foot Size Finder &amp; AR Caliper</span>
-              <span class="rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-black uppercase text-accent">Camera Measure</span>
-            </div>
-            <p class="truncate text-[11px] text-muted">
-              කකුල මැන හෝ Camera එකෙන් UK / EU / US Size එක සහ කඩේ ඇති සපත්තු සොයන්න
-            </p>
-          </div>
-        </div>
-        <div class="flex items-center gap-1 shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-bg shadow-xs">
-          <span>Open</span>
-          <ChevronRight class="h-3.5 w-3.5" />
-        </div>
-      </button>
-
       <!-- Scanner & Search Card -->
       <div class="card p-4 space-y-3" onclick={(e) => e.stopPropagation()} role="presentation">
         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -1265,16 +1237,6 @@
           </label>
 
           <div class="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              class="btn btn-sm h-7 px-2.5 text-[11px] border-accent/40 bg-accent/10 text-accent hover:bg-accent/20"
-              onclick={() => (app.sizeFinderOpen = true)}
-              title="Smart Foot Size Finder & AR Caliper (කකුල මැන Size එක සෙවීම)"
-            >
-              <Footprints class="h-3.5 w-3.5" />
-              <span>Size Finder</span>
-            </button>
-
             <button
               type="button"
               class="btn btn-sm h-7 px-2.5 text-[11px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"

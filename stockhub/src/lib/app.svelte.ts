@@ -49,7 +49,6 @@ class AppStore {
   authPrefillEmail = $state('');
   deferredPwaPrompt = $state<any>(null);
   branchStockModalOpen = $state(false);
-  sizeFinderOpen = $state(false);
 
   private toastSeq = 0;
 
