@@ -25,11 +25,14 @@
     loadAutoPcPrint,
     saveAutoPcPrint,
     sendReceiptToPcPrinter,
+    waitForPrintJobStatus,
+    checkCounterPcStatus,
   } from './logic';
 
   // ---------------- state ----------------
   let locationId = $state('');
   let locDropdownOpen = $state(false);
+  let counterPcOnline = $state<boolean | null>(null);
   let lines = $state<PosLine[]>([]);
   let discountVal = $state('');
   let discountMode = $state<'fixed' | 'pct'>('fixed');
@@ -96,6 +99,20 @@
 
   // ---------------- lifecycle & persistence ----------------
   let draftLoaded = false;
+  let counterPcCheckTimer: ReturnType<typeof setInterval> | undefined;
+
+  async function updateCounterPcStatus() {
+    if (!locationId) {
+      counterPcOnline = null;
+      return;
+    }
+    try {
+      const res = await checkCounterPcStatus(locationId);
+      counterPcOnline = res.online;
+    } catch {
+      // silent
+    }
+  }
 
   async function loadBrandsAndCategories() {
     try {
@@ -125,6 +142,11 @@
       if (saved.whatsappPhone) whatsappPhone = saved.whatsappPhone;
     }
     draftLoaded = true;
+    updateCounterPcStatus();
+    counterPcCheckTimer = setInterval(updateCounterPcStatus, 15000);
+    return () => {
+      if (counterPcCheckTimer) clearInterval(counterPcCheckTimer);
+    };
   });
 
   // Resolve default location once app.locations are loaded
@@ -154,10 +176,11 @@
     });
   });
 
-  // Fetch recent sales when location changes
+  // Fetch recent sales and PC status when location changes
   $effect(() => {
     if (locationId) {
       fetchRecentSales(locationId);
+      updateCounterPcStatus();
     }
   });
 
@@ -864,6 +887,18 @@
         const pcRes = await sendReceiptToPcPrinter(receiptData, locationId);
         if (pcRes.ok) {
           app.toast(pcRes.message, 'success');
+          // If queued to dedicated print_jobs table, verify physical printing asynchronously
+          if (pcRes.jobId && pcRes.queueType === 'print_jobs') {
+            waitForPrintJobStatus(pcRes.jobId, 12000).then((statusRes) => {
+              if (statusRes.status === 'printed') {
+                SoundFx.success();
+                app.toast(`✓ Invoice #${receiptData.invoiceNo || ''} Printed on Counter PC!`, 'success');
+              } else if (statusRes.status === 'failed') {
+                SoundFx.error();
+                app.toast(`⚠ PC Printer Error: ${statusRes.error || 'Failed to print'}`, 'error');
+              }
+            });
+          }
         } else {
           app.toast(pcRes.message, 'warning');
         }
@@ -1064,6 +1099,17 @@
       const r = buildReceiptFromPastSale(s);
       const res = await sendReceiptToPcPrinter(r, locationId);
       app.toast(res.message, res.ok ? 'success' : 'error');
+      if (res.ok && res.jobId && res.queueType === 'print_jobs') {
+        waitForPrintJobStatus(res.jobId, 12000).then((statusRes) => {
+          if (statusRes.status === 'printed') {
+            SoundFx.success();
+            app.toast(`✓ Invoice #${r.invoiceNo || ''} Printed on Counter PC!`, 'success');
+          } else if (statusRes.status === 'failed') {
+            SoundFx.error();
+            app.toast(`⚠ PC Printer Error: ${statusRes.error || 'Failed to print'}`, 'error');
+          }
+        });
+      }
     } finally {
       sendingPcSaleId = null;
     }
@@ -1789,13 +1835,37 @@
           class="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-line bg-surface p-3 select-none"
         >
           <div class="flex items-center gap-2 min-w-0">
-            <Printer class="h-4 w-4 shrink-0 {autoPcPrint ? 'text-ok' : 'text-dim'}" />
+            <div class="relative shrink-0">
+              <Printer class="h-4 w-4 {autoPcPrint ? 'text-ok' : 'text-dim'}" />
+              {#if counterPcOnline === true}
+                <span class="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-surface animate-pulse" title="Counter PC Online"></span>
+              {:else if counterPcOnline === false}
+                <span class="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-surface" title="Counter PC Offline"></span>
+              {/if}
+            </div>
             <div class="min-w-0">
-              <div class="text-xs font-bold text-fg">
-                Auto-Print on Counter PC ({activeLoc?.name || 'Branch'})
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-bold text-fg">
+                  Auto-Print on Counter PC ({activeLoc?.name || 'Branch'})
+                </span>
+                {#if counterPcOnline === true}
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                    PC Online
+                  </span>
+                {:else if counterPcOnline === false}
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                    <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                    PC Offline
+                  </span>
+                {/if}
               </div>
               <div class="text-[10px] text-muted">
-                PC POS එක ON නම් USB Printer එකෙන් ස්වයංක්‍රීයව බිල Print වේ
+                {#if counterPcOnline === false}
+                  කවුන්ටර් PC එකේ POS App එක Open කරලා තියෙන්න ඕනේ
+                {:else}
+                  PC POS එක ON නම් USB Printer එකෙන් ස්වයංක්‍රීයව බිල Print වේ
+                {/if}
               </div>
             </div>
           </div>

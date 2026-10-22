@@ -81,19 +81,20 @@ export function saveAutoPcPrint(enabled: boolean) {
 }
 
 /**
- * Send a receipt from Mobile POS to the branch's Counter PC POS thermal printer
- * via Supabase `receipt_settings` live print queue.
+ * Send a receipt from Mobile POS to the branch's Counter PC POS thermal printer.
+ * Prioritizes the dedicated `print_jobs` queue for zero data loss & sub-second latency,
+ * with graceful fallback to `receipt_settings` if the table is pending migration.
  */
 export async function sendReceiptToPcPrinter(
   r: PosReceiptDetails,
   explicitLocationId?: string,
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; jobId?: string; queueType: 'print_jobs' | 'legacy' }> {
   const locId = explicitLocationId || r.locationId;
   if (!locId) {
-    return { ok: false, message: 'No branch location selected for PC printing.' };
+    return { ok: false, message: 'No branch location selected for PC printing.', queueType: 'legacy' };
   }
 
-  const job = {
+  const payload = {
     job_id: `${r.id}_${Date.now()}`,
     sale_id: r.id,
     invoice_no: r.invoiceNo,
@@ -120,6 +121,31 @@ export async function sendReceiptToPcPrinter(
     })),
   };
 
+  // 1. PRIMARY PIPELINE: Try fast dedicated `print_jobs` table
+  try {
+    const jobRes = await restWrite<any>('POST', 'print_jobs', {
+      location_id: locId,
+      sale_id: r.id || null,
+      invoice_no: r.invoiceNo || null,
+      payload,
+      status: 'pending',
+      attempts: 0,
+    });
+
+    const createdJob = Array.isArray(jobRes) ? jobRes[0] : jobRes;
+    const jobId = createdJob?.id || payload.job_id;
+
+    return {
+      ok: true,
+      jobId,
+      queueType: 'print_jobs',
+      message: `Sent ${formatInvoiceNo(r.invoiceNo, r.id)} to ${r.branchName} Counter PC Printer!`,
+    };
+  } catch (tableErr: any) {
+    console.warn('Dedicated print_jobs queue not available, falling back to legacy queue:', tableErr?.message || tableErr);
+  }
+
+  // 2. FALLBACK PIPELINE: Legacy `receipt_settings` queue
   try {
     const existingRows = await restGet<any[]>(
       `receipt_settings?location_id=eq.${encodeURIComponent(locId)}&select=location_id,email_address`,
@@ -139,14 +165,14 @@ export async function sendReceiptToPcPrinter(
           }
         } catch {}
       }
-      queue.push(job);
+      queue.push(payload);
       if (queue.length > 10) queue = queue.slice(-10);
 
       await restWrite('PATCH', `receipt_settings?location_id=eq.${encodeURIComponent(locId)}`, {
         email_address: JSON.stringify({ ff_print_queue: queue }),
       });
     } else {
-      queue.push(job);
+      queue.push(payload);
       await restWrite('POST', 'receipt_settings', {
         location_id: locId,
         business_name: r.branchName || 'Fashion Feet',
@@ -158,15 +184,66 @@ export async function sendReceiptToPcPrinter(
 
     return {
       ok: true,
-      message: `Sent ${formatInvoiceNo(r.invoiceNo, r.id)} to ${r.branchName} Counter PC Printer!`,
+      jobId: payload.job_id,
+      queueType: 'legacy',
+      message: `Sent ${formatInvoiceNo(r.invoiceNo, r.id)} to ${r.branchName} Counter PC (legacy)!`,
     };
   } catch (err: any) {
     console.error('Failed to queue PC print job:', err);
     return {
       ok: false,
+      queueType: 'legacy',
       message: 'Failed to send to PC Printer: ' + (err.message || 'Network error'),
     };
   }
+}
+
+/**
+ * Polls for the confirmation of a print job until it's printed, failed, or times out.
+ */
+export async function waitForPrintJobStatus(
+  jobId: string,
+  timeoutMs = 12000,
+): Promise<{ status: 'printed' | 'failed' | 'timeout' | 'pending'; error?: string }> {
+  if (!jobId) return { status: 'timeout' };
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const rows = await restGet<any[]>(
+        `print_jobs?id=eq.${encodeURIComponent(jobId)}&select=status,error,printed_at`,
+      );
+      if (rows && rows.length > 0) {
+        const s = rows[0].status;
+        if (s === 'printed') return { status: 'printed' };
+        if (s === 'failed') return { status: 'failed', error: rows[0].error };
+      }
+    } catch {}
+    await new Promise((res) => setTimeout(res, 800));
+  }
+  return { status: 'timeout' };
+}
+
+/**
+ * Checks if the Counter PC for this branch is currently online (heartbeat within 35s).
+ */
+export async function checkCounterPcStatus(
+  locationId: string,
+): Promise<{ online: boolean; terminalName?: string; printerName?: string }> {
+  if (!locationId) return { online: false };
+  try {
+    const threshold = new Date(Date.now() - 35000).toISOString();
+    const rows = await restGet<any[]>(
+      `pc_terminals?location_id=eq.${encodeURIComponent(locationId)}&is_online=eq.true&last_seen_at=gte.${encodeURIComponent(threshold)}&order=last_seen_at.desc&limit=1`,
+    );
+    if (rows && rows.length > 0) {
+      return {
+        online: true,
+        terminalName: rows[0].terminal_name,
+        printerName: rows[0].printer_name,
+      };
+    }
+  } catch {}
+  return { online: false };
 }
 
 export function loadPosDraft(): PosDraft | null {
