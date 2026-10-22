@@ -40,14 +40,32 @@ export class WebXRMeasureManager {
       const xr = (navigator as any).xr;
       if (!xr) throw new Error('WebXR is not supported on this browser.');
 
-      const sessionInit: XRSessionInit = {
-        requiredFeatures: ['hit-test'],
-        optionalFeatures: ['dom-overlay'],
-        domOverlay: { root: domOverlayRoot },
-      };
+      let session: XRSession | null = null;
 
-      this.session = await xr.requestSession('immersive-ar', sessionInit);
-      if (!this.session) throw new Error('Could not create immersive-ar session.');
+      // Attempt 1: Standard optional features (hit-test + dom-overlay)
+      try {
+        session = await xr.requestSession('immersive-ar', {
+          optionalFeatures: ['hit-test', 'dom-overlay', 'local-floor'],
+          domOverlay: { root: domOverlayRoot },
+        });
+      } catch (err1: any) {
+        console.warn('WebXR Attempt 1 failed:', err1?.message);
+        // Attempt 2: Without dom-overlay
+        try {
+          session = await xr.requestSession('immersive-ar', {
+            optionalFeatures: ['hit-test', 'local-floor'],
+          });
+        } catch (err2: any) {
+          console.warn('WebXR Attempt 2 failed:', err2?.message);
+          // Attempt 3: Bare session
+          session = await xr.requestSession('immersive-ar');
+        }
+      }
+
+      if (!session) {
+        throw new Error('This device requires Google Play Services for AR (ARCore) to run 3D AR camera.');
+      }
+      this.session = session;
 
       // 1. Scene, Camera, Lights
       this.scene = new THREE.Scene();
@@ -72,9 +90,20 @@ export class WebXRMeasureManager {
       this.scene.add(this.reticle);
 
       // 4. Hit Test setup
-      this.referenceSpace = await this.session.requestReferenceSpace('local');
-      const viewerSpace = await this.session.requestReferenceSpace('viewer');
-      this.hitTestSource = await this.session.requestHitTestSource!({ space: viewerSpace })!;
+      try {
+        this.referenceSpace = await this.session.requestReferenceSpace('local');
+      } catch {
+        this.referenceSpace = await this.session.requestReferenceSpace('viewer');
+      }
+
+      try {
+        if (typeof (this.session as any).requestHitTestSource === 'function') {
+          const viewerSpace = await this.session.requestReferenceSpace('viewer');
+          this.hitTestSource = await (this.session as any).requestHitTestSource({ space: viewerSpace });
+        }
+      } catch (hitErr) {
+        console.warn('Hit test source not available:', hitErr);
+      }
 
       // 5. User Tap Event (select)
       this.session.addEventListener('select', () => this.handleTap());

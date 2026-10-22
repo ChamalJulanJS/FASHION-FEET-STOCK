@@ -342,8 +342,16 @@
         {/if}
 
         {#if xrError}
-          <div class="rounded-xl border border-bad/30 bg-bad/10 p-3 text-xs text-bad">
-            ⚠ {xrError}
+          <div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-fg space-y-1.5">
+            <div class="flex items-center gap-1.5 font-bold text-amber-600 dark:text-amber-400">
+              <AlertCircle class="h-4 w-4 shrink-0" />
+              <span>3D AR Camera එක මෙම Phone එකේ සක්‍රීය නැත</span>
+            </div>
+            <p class="text-muted leading-relaxed">
+              Google WebXR 3D AR ක්‍රියාත්මක වීමට Android Phone එකෙහි <b>Google Play Services for AR (ARCore)</b> ස්ථාපනය කර තිබිය යුතුය.
+              <br />
+              ඔබ iPhone එකක් භාවිත කරන්නේ නම්, එහි එන <b>Apple Measure</b> app එකෙන් කකුල මැන, පහත ඇති Slider එකට අගය ලබා දෙන්න.
+            </p>
           </div>
         {/if}
 
