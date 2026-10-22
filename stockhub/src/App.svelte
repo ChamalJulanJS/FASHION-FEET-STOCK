@@ -7,6 +7,7 @@
   import AuthModal from './components/AuthModal.svelte';
   import StaffManager from './components/StaffManager.svelte';
   import BranchStockModal from './components/BranchStockModal.svelte';
+  import ArMeasureModal from './features/ar/ArMeasureModal.svelte';
   import Pos from './features/pos/Pos.svelte';
   import Grn from './features/grn/Grn.svelte';
   import Transfer from './features/transfer/Transfer.svelte';
@@ -45,6 +46,9 @@
   <StaffManager />
   {#if app.branchStockModalOpen}
     <BranchStockModal />
+  {/if}
+  {#if app.arMeasureOpen}
+    <ArMeasureModal />
   {/if}
   <Toasts />
 </div>

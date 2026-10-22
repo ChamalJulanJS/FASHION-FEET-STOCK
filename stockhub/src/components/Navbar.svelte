@@ -3,6 +3,7 @@
   import {
     Boxes, ArrowLeftRight, History, PackageSearch, PackageCheck, ClipboardCheck, RefreshCw, Sun, Moon, Volume2, VolumeX,
     Download, User, ChevronDown, Users, KeyRound, LogOut, Share, PlusSquare, X, Smartphone, Store, ShoppingBag, PackagePlus,
+    Glasses,
   } from 'lucide-svelte';
 
   let menuOpen = $state(false);
@@ -125,6 +126,17 @@
 
     <!-- Right Utilities -->
     <div class="flex items-center gap-1.5 shrink-0">
+      <button
+        type="button"
+        class="btn btn-sm gap-1.5 px-2.5 text-accent border-accent/40 bg-accent/10 hover:bg-accent/20"
+        onclick={() => (app.arMeasureOpen = true)}
+        title="WebXR 3D AR Foot Measure (Android/Samsung 3D මැනීම)"
+      >
+        <Glasses class="h-3.5 w-3.5 shrink-0 text-accent" />
+        <span class="hidden sm:inline font-bold">3D AR</span>
+        <span class="sm:hidden font-bold">AR</span>
+      </button>
+
       <button
         type="button"
         class="btn btn-sm gap-1.5 px-2.5"
