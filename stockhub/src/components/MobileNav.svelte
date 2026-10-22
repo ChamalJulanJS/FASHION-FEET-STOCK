@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app, type HubTab } from '../lib/app.svelte';
-  import { ShoppingBag, PackagePlus, ArrowLeftRight, PackageSearch, ClipboardCheck, History } from 'lucide-svelte';
+  import { ShoppingBag, PackagePlus, ArrowLeftRight, PackageSearch, ClipboardCheck, History, Glasses } from 'lucide-svelte';
 
   const items: { id: HubTab; label: string; icon: any }[] = [
     { id: 'pos', label: 'POS Bill', icon: ShoppingBag },
@@ -12,6 +12,17 @@
   ];
   const cartCount = $derived(app.cart.reduce((n, l) => n + l.qty, 0));
 </script>
+
+<!-- Mobile Floating 3D AR Measure Quick Button -->
+<button
+  type="button"
+  class="fixed bottom-[70px] right-3 z-40 flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent px-3.5 py-2 text-xs font-black text-bg shadow-2xl active:scale-95 transition-all md:hidden cursor-pointer"
+  onclick={() => (app.arMeasureOpen = true)}
+  title="WebXR 3D AR Foot Measure"
+>
+  <Glasses class="h-4 w-4 shrink-0" />
+  <span>3D AR</span>
+</button>
 
 <nav
   class="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"

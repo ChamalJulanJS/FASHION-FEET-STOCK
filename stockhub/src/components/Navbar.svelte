@@ -80,9 +80,10 @@
         </div>
         <div class="leading-none">
           <div class="font-display text-sm font-bold tracking-tight text-fg">
-            FashionFeet
+            <span class="sm:hidden">FF Hub</span>
+            <span class="hidden sm:inline">FashionFeet</span>
           </div>
-          <div class="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-dim">
+          <div class="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-dim hidden sm:block">
             Stock Hub
           </div>
         </div>
@@ -125,16 +126,15 @@
     </div>
 
     <!-- Right Utilities -->
-    <div class="flex items-center gap-1.5 shrink-0">
+    <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
       <button
         type="button"
-        class="btn btn-sm gap-1.5 px-2.5 text-accent border-accent/40 bg-accent/10 hover:bg-accent/20"
+        class="btn btn-sm gap-1 px-2 sm:px-2.5 text-accent border-accent/40 bg-accent/10 hover:bg-accent/20"
         onclick={() => (app.arMeasureOpen = true)}
         title="WebXR 3D AR Foot Measure (Android/Samsung 3D මැනීම)"
       >
         <Glasses class="h-3.5 w-3.5 shrink-0 text-accent" />
-        <span class="hidden sm:inline font-bold">3D AR</span>
-        <span class="sm:hidden font-bold">AR</span>
+        <span class="text-xs font-bold">3D AR</span>
       </button>
 
       <button

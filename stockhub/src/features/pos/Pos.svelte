@@ -4,7 +4,7 @@
     ShoppingBag, Store, ChevronDown, Check, Search, X, Camera, Zap, Plus, Minus,
     Trash2, Printer, MessageCircle, CreditCard, Banknote, QrCode, Split, User,
     Phone, RefreshCw, Receipt, Ban, Loader2, Sparkles, PackagePlus, Layers, AlertCircle,
-    Glasses,
+    Glasses, ChevronRight,
   } from 'lucide-svelte';
   import { app, getShoeDisplaySize, fmtMoney } from '../../lib/app.svelte';
   import { restGet, restWrite } from '../../lib/api';
@@ -1229,6 +1229,32 @@
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
     <!-- LEFT COLUMN: Scanner, 1-Tap Size Bar & Bill Items (7 cols) -->
     <div class="min-w-0 space-y-3.5 lg:col-span-7">
+      <!-- 3D AR Foot Measure Quick Card -->
+      <div class="flex items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-surface p-3 shadow-xs">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-bg shadow-sm">
+            <Glasses class="h-5 w-5" />
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs font-bold text-fg">3D AR Foot Measure</span>
+              <span class="rounded bg-accent/20 px-1.5 py-0.2 text-[9px] font-black uppercase text-accent">Android / Samsung</span>
+            </div>
+            <p class="text-[11px] text-muted truncate">
+              Camera එකෙන් කකුල මැන UK / EU Size එක ලබාගන්න
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm h-8 px-3 text-xs font-bold shrink-0 shadow-xs gap-1 cursor-pointer"
+          onclick={() => (app.arMeasureOpen = true)}
+        >
+          <span>Open AR</span>
+          <ChevronRight class="h-3 w-3" />
+        </button>
+      </div>
+
       <!-- Scanner & Search Card -->
       <div class="card p-4 space-y-3" onclick={(e) => e.stopPropagation()} role="presentation">
         <div class="flex flex-wrap items-center justify-between gap-2">
