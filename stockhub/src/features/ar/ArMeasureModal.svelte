@@ -82,7 +82,12 @@
         xrBusy = false;
       },
       onError: (msg) => {
-        xrError = msg;
+        if (msg.toLowerCase().includes('not supported') || msg.toLowerCase().includes('configuration')) {
+          isXrSupported = false;
+          xrError = null;
+        } else {
+          xrError = msg;
+        }
         inAr = false;
         xrBusy = false;
       },
@@ -92,7 +97,13 @@
       inAr = true;
       await xrManager.start(overlayEl);
     } catch (e: any) {
-      xrError = e.message || 'Failed to start AR';
+      const msg = e.message || 'Failed to start AR';
+      if (msg.toLowerCase().includes('not supported') || msg.toLowerCase().includes('configuration')) {
+        isXrSupported = false;
+        xrError = null;
+      } else {
+        xrError = msg;
+      }
       inAr = false;
     } finally {
       xrBusy = false;
