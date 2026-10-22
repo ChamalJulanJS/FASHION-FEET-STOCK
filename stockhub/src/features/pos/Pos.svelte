@@ -4,6 +4,7 @@
     ShoppingBag, Store, ChevronDown, Check, Search, X, Camera, Zap, Plus, Minus,
     Trash2, Printer, MessageCircle, CreditCard, Banknote, QrCode, Split, User,
     Phone, RefreshCw, Receipt, Ban, Loader2, Sparkles, PackagePlus, Layers, AlertCircle,
+    Footprints,
   } from 'lucide-svelte';
   import { app, getShoeDisplaySize, fmtMoney } from '../../lib/app.svelte';
   import { restGet, restWrite } from '../../lib/api';
@@ -1237,6 +1238,16 @@
           </label>
 
           <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              class="btn btn-sm h-7 px-2.5 text-[11px] border-accent/40 bg-accent/10 text-accent hover:bg-accent/20"
+              onclick={() => (app.sizeFinderOpen = true)}
+              title="Smart Foot Size Finder & AR Caliper (කකුල මැන Size එක සෙවීම)"
+            >
+              <Footprints class="h-3.5 w-3.5" />
+              <span>Size Finder</span>
+            </button>
+
             <button
               type="button"
               class="btn btn-sm h-7 px-2.5 text-[11px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
