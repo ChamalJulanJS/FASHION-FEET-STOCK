@@ -613,9 +613,9 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     ctx.fillStyle = '#0f172a';
     ctx.fillText('Thank you for shopping at Fashion Feet!', width / 2, y);
 
-    // Return full Data-URI (data:image/png;base64,...) for WAHA / Baileys
-    const dataUrl = canvas.toDataURL('image/png');
-    return dataUrl;
+    // Export as high-quality JPEG and strip data:image/... prefix for WAHA / WhatsApp
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    return dataUrl.replace(/^data:image\/[a-z]+;base64,/, '').trim();
   } catch (e) {
     console.warn('Canvas receipt generation failed:', e);
     return '';
