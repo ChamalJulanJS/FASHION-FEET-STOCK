@@ -74,11 +74,15 @@ const AUTO_PC_PRINT_KEY = 'ff_pos_auto_pc_print';
 export const N8N_WEBHOOK_URL_KEY = 'ff_n8n_webhook_url';
 export const N8N_AUTO_SEND_KEY = 'ff_n8n_auto_send';
 
+export const DEFAULT_N8N_WEBHOOK_URL = 'https://n8n.fashionfeet.lk/webhook/fashionfeet-pos-bill';
+
 export function loadN8nWebhookUrl(): string {
   try {
-    return localStorage.getItem(N8N_WEBHOOK_URL_KEY) || '';
+    const saved = localStorage.getItem(N8N_WEBHOOK_URL_KEY);
+    if (!saved || !saved.trim()) return DEFAULT_N8N_WEBHOOK_URL;
+    return saved.trim();
   } catch {
-    return '';
+    return DEFAULT_N8N_WEBHOOK_URL;
   }
 }
 
