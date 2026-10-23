@@ -415,6 +415,213 @@ export function openWhatsAppReceipt(r: PosReceiptDetails, phoneInput?: string) {
   window.open(url, '_blank');
 }
 
+/**
+ * Generates a high-resolution, pixel-perfect PNG receipt image as a Base64 string.
+ * Renders on a 2x Retina canvas with Fashion Feet official branding, item details,
+ * and financial breakdown for sending via WhatsApp Image API (WAHA / Baileys).
+ */
+export function generateReceiptImageBase64(r: PosReceiptDetails): string {
+  if (typeof document === 'undefined') return '';
+  try {
+    const scale = 2; // Retina sharpness
+    const width = 560;
+    const headerHeight = 220;
+    const itemsHeight = Math.max(r.items.length * 62, 80);
+    const totalsHeight = (r.discount > 0 ? 25 : 0) + (r.cashReceived > 0 ? 55 : 0) + 150;
+    const footerHeight = 120;
+    const height = headerHeight + itemsHeight + totalsHeight + footerHeight;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    ctx.scale(scale, scale);
+
+    // Background - Crisp White Slip
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    // Outer subtle border
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(12, 12, width - 24, height - 24);
+
+    let y = 50;
+
+    // Header Brand
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('FASHION FEET', width / 2, y);
+
+    y += 24;
+    ctx.font = '700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#10b981'; // Emerald brand accent
+    ctx.fillText(String(r.branchName || 'RETAIL OUTLET').toUpperCase(), width / 2, y);
+
+    y += 18;
+    ctx.font = '600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('FOOTWEAR & ACCESSORIES · OFFICIAL DIGITAL RECEIPT', width / 2, y);
+
+    y += 18;
+    function drawDashed(currY: number) {
+      ctx!.save();
+      ctx!.beginPath();
+      ctx!.setLineDash([5, 3]);
+      ctx!.strokeStyle = '#cbd5e1';
+      ctx!.lineWidth = 1;
+      ctx!.moveTo(25, currY);
+      ctx!.lineTo(width - 25, currY);
+      ctx!.stroke();
+      ctx!.restore();
+    }
+
+    drawDashed(y);
+    y += 24;
+
+    // Invoice Meta
+    const inv = formatInvoiceNo(r.invoiceNo, r.id);
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#1e293b';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Invoice: ${inv}`, 25, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(`Date: ${r.date}`, width - 25, y);
+
+    y += 18;
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Cashier: ${r.cashierName || 'Staff'}`, 25, y);
+    if (r.customer?.name) {
+      ctx.textAlign = 'right';
+      ctx.fillText(`Customer: ${r.customer.name}`, width - 25, y);
+    }
+
+    y += 16;
+    drawDashed(y);
+    y += 22;
+
+    // Table Header
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'left';
+    ctx.fillText('ITEM / DESCRIPTION', 25, y);
+    ctx.textAlign = 'center';
+    ctx.fillText('QTY', width - 140, y);
+    ctx.textAlign = 'right';
+    ctx.fillText('AMOUNT (LKR)', width - 25, y);
+
+    y += 8;
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(25, y, width - 50, 1);
+    y += 18;
+
+    // Items
+    r.items.forEach((it) => {
+      ctx.font = 'bold 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.textAlign = 'left';
+      const itemName = `${it.brand ? it.brand + ' ' : ''}${it.name}`;
+      const truncated = itemName.length > 30 ? itemName.slice(0, 28) + '...' : itemName;
+      ctx.fillText(truncated, 25, y);
+
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(it.qty), width - 140, y);
+
+      ctx.textAlign = 'right';
+      ctx.fillText(it.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }), width - 25, y);
+
+      y += 16;
+      ctx.font = '600 10.5px monospace';
+      ctx.fillStyle = '#64748b';
+      ctx.textAlign = 'left';
+      const sz = it.displaySize && it.displaySize !== '-' ? `Sz: ${it.displaySize}` : (it.size ? `Sz: ${it.size}` : '');
+      const details = [it.sku, sz, it.colour].filter(Boolean).join(' | ');
+      ctx.fillText(details, 25, y);
+
+      ctx.textAlign = 'right';
+      ctx.fillText(`@ Rs. ${it.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
+
+      y += 24;
+    });
+
+    drawDashed(y);
+    y += 24;
+
+    // Totals
+    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = 'left';
+    ctx.fillText('Subtotal', 25, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(`Rs. ${r.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
+    y += 20;
+
+    if (r.discount > 0) {
+      ctx.fillStyle = '#d97706';
+      ctx.textAlign = 'left';
+      ctx.fillText('Discount (වට්ටම)', 25, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`- Rs. ${r.discount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
+      y += 20;
+    }
+
+    // Grand Total Box
+    y += 4;
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(25, y, width - 50, 42);
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(25, y, width - 50, 42);
+
+    ctx.font = '900 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'left';
+    ctx.fillText('GRAND TOTAL', 40, y + 26);
+
+    ctx.textAlign = 'right';
+    ctx.fillText(`Rs. ${r.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 40, y + 26);
+    y += 58;
+
+    // Payment details
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Payment: ${String(r.paymentMethod).toUpperCase()}`, 25, y);
+
+    if (r.cashReceived > 0) {
+      ctx.textAlign = 'right';
+      ctx.fillText(`Cash: Rs. ${r.cashReceived.toLocaleString()} | Change: Rs. ${r.changeAmount.toLocaleString()}`, width - 25, y);
+    }
+    y += 22;
+
+    drawDashed(y);
+    y += 26;
+
+    // Footer
+    ctx.font = '600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    ctx.fillText('Exchange within 7 days with this digital invoice & unworn condition.', width / 2, y);
+    y += 18;
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText('Thank you for shopping at Fashion Feet!', width / 2, y);
+
+    // Return pure base64 (without data:image/png;base64, prefix for WAHA / Baileys)
+    const dataUrl = canvas.toDataURL('image/png');
+    return dataUrl.replace(/^data:image\/png;base64,/, '');
+  } catch (e) {
+    console.warn('Canvas receipt generation failed:', e);
+    return '';
+  }
+}
+
 export interface N8nPosBillPayload {
   event: 'pos_sale_completed';
   timestamp: number;
@@ -513,6 +720,7 @@ export async function sendBillToN8nWebhook(
     whatsapp_message: messageText,
     formattedMessage: messageText,
     text: messageText,
+    receipt_image_base64: generateReceiptImageBase64(r),
   };
 
   try {
@@ -610,6 +818,33 @@ export async function testN8nWebhook(webhookUrl: string): Promise<{ ok: boolean;
     whatsapp_message: '✨ *FASHION FEET POS TEST* ✨\nYour VPS n8n Webhook is working perfectly!',
     formattedMessage: '✨ *FASHION FEET POS TEST* ✨\nYour VPS n8n Webhook is working perfectly!',
     text: '✨ *FASHION FEET POS TEST* ✨\nYour VPS n8n Webhook is working perfectly!',
+    receipt_image_base64: generateReceiptImageBase64({
+      id: 'test-01',
+      invoiceNo: 9999,
+      date: new Date().toLocaleString('en-GB'),
+      branchName: 'Shoe Gallery (Test)',
+      cashierName: 'Cashier',
+      customer: { id: 'c1', name: 'Valued Customer', phone: '0771234567' },
+      paymentMethod: 'cash',
+      subtotal: 3500,
+      discount: 500,
+      grandTotal: 3000,
+      cashReceived: 3000,
+      changeAmount: 0,
+      items: [
+        {
+          sku: 'SG-101',
+          name: 'Classic Men Sneaker',
+          brand: 'Puma',
+          size: '42',
+          displaySize: '42 (UK 8)',
+          colour: 'Black',
+          qty: 1,
+          unitPrice: 3500,
+          lineTotal: 3500,
+        },
+      ],
+    }),
     test: true,
   };
 
