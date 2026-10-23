@@ -13,6 +13,7 @@
   import { extractBaseSkuAndSize } from '../stockcount/logic';
   import CameraScanner from '../transfer/CameraScanner.svelte';
   import ReceiptModal from './ReceiptModal.svelte';
+  import N8nSettingsModal from './N8nSettingsModal.svelte';
   import {
     type PaymentMethod,
     type PosLine,
@@ -28,6 +29,12 @@
     sendReceiptToPcPrinter,
     waitForPrintJobStatus,
     checkCounterPcStatus,
+    loadN8nWebhookUrl,
+    loadN8nAutoSend,
+    saveN8nAutoSend,
+    sendBillToN8nWebhook,
+    formatPhoneDisplay,
+    normalizeSlPhone,
   } from './logic';
 
   // ---------------- state ----------------
@@ -42,6 +49,9 @@
   let customer = $state<PosCustomer | null>(null);
   let whatsappPhone = $state('');
   let autoPcPrint = $state(true);
+  let autoN8nSend = $state(true);
+  let n8nWebhookUrl = $state('');
+  let n8nSettingsOpen = $state(false);
   let sendingPcSaleId = $state<string | null>(null);
 
   // Search & Scanner state
@@ -130,6 +140,8 @@
 
   onMount(() => {
     autoPcPrint = loadAutoPcPrint();
+    autoN8nSend = loadN8nAutoSend();
+    n8nWebhookUrl = loadN8nWebhookUrl();
     loadBrandsAndCategories();
     const saved = loadPosDraft();
     if (saved) {
@@ -141,6 +153,7 @@
       if (saved.cashReceived) cashReceived = saved.cashReceived;
       if (saved.customer) customer = saved.customer;
       if (saved.whatsappPhone) whatsappPhone = saved.whatsappPhone;
+      if (typeof saved.autoN8nSend === 'boolean') autoN8nSend = saved.autoN8nSend;
     }
     draftLoaded = true;
     updateCounterPcStatus();
@@ -174,6 +187,8 @@
       cashReceived,
       customer,
       whatsappPhone,
+      autoPcPrint,
+      autoN8nSend,
     });
   });
 
@@ -884,6 +899,38 @@
       activeReceipt = receiptData;
       receiptIsSuccess = true;
 
+      // Trigger VPS n8n WhatsApp Webhook (Non-blocking background dispatch)
+      const targetWhatsApp = receiptData.customerPhone;
+      if (targetWhatsApp && autoN8nSend) {
+        const currentWebhook = loadN8nWebhookUrl();
+        if (currentWebhook) {
+          sendBillToN8nWebhook(receiptData, targetWhatsApp, currentWebhook).then((n8nRes) => {
+            if (activeReceipt && activeReceipt.id === receiptData.id) {
+              activeReceipt = {
+                ...activeReceipt,
+                n8nStatus: {
+                  attempted: true,
+                  ok: n8nRes.ok,
+                  message: n8nRes.message,
+                  timestamp: Date.now(),
+                },
+              };
+            }
+            if (n8nRes.ok) {
+              app.toast(`✓ WhatsApp Bill sent via VPS n8n to ${formatPhoneDisplay(normalizeSlPhone(targetWhatsApp))}!`, 'success');
+            } else {
+              app.toast(`⚠ n8n Webhook: ${n8nRes.message}`, 'warning');
+            }
+          });
+        } else {
+          receiptData.n8nStatus = {
+            attempted: false,
+            ok: false,
+            message: 'VPS n8n Webhook URL is not configured in Settings.',
+          };
+        }
+      }
+
       if (autoPcPrint || forcePcPrint) {
         const pcRes = await sendReceiptToPcPrinter(receiptData, locationId);
         if (pcRes.ok) {
@@ -1221,6 +1268,22 @@
           <span class="text-dim">·</span>
           <strong class="font-mono text-ok">{fmtMoney(todayStats.revenue)}</strong>
         </div>
+
+        <!-- n8n VPS WhatsApp Webhook Settings Button -->
+        <button
+          type="button"
+          class="btn h-9 gap-1.5 px-3 text-xs font-semibold cursor-pointer {n8nWebhookUrl.trim() ? 'border-ok/30 bg-ok/5 text-ok' : 'border-line text-muted'}"
+          onclick={() => (n8nSettingsOpen = true)}
+          title="VPS n8n WhatsApp Webhook Settings"
+        >
+          <MessageCircle class="h-3.5 w-3.5 {n8nWebhookUrl.trim() ? 'text-ok' : 'text-dim'}" />
+          <span>WhatsApp n8n</span>
+          {#if n8nWebhookUrl.trim()}
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" title="Webhook Configured"></span>
+          {:else}
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-500" title="Setup Webhook URL"></span>
+          {/if}
+        </button>
       </div>
     </div>
   </div>
@@ -1622,92 +1685,157 @@
       class="min-w-0 space-y-3.5 lg:col-span-5 lg:sticky lg:top-18"
     >
       <!-- Customer & WhatsApp Phone Card -->
-      <div class="card p-3.5 space-y-2.5">
-        <div class="flex items-center justify-between">
-          <span class="text-[11px] font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
-            <User class="h-3.5 w-3.5 text-dim" />
-            <span>Customer / WhatsApp Receipt No (Optional)</span>
-          </span>
-          <button
-            type="button"
-            class="cursor-pointer text-[11px] font-semibold text-ok hover:underline"
-            onclick={() => (newCustOpen = !newCustOpen)}
-          >
-            {newCustOpen ? 'Cancel' : '+ New Customer'}
-          </button>
-        </div>
+      <div class="card p-3.5 space-y-3">
+        <!-- Dedicated WhatsApp Phone Input -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+              <MessageCircle class="h-3.5 w-3.5 text-ok" />
+              <span>Customer WhatsApp Phone (ඩිජිටල් බිල යැවීමට)</span>
+            </span>
+            {#if n8nWebhookUrl.trim()}
+              <button
+                type="button"
+                class="cursor-pointer text-[10px] font-semibold text-ok flex items-center gap-1 hover:underline"
+                onclick={() => (n8nSettingsOpen = true)}
+              >
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>n8n VPS</span>
+              </button>
+            {:else}
+              <button
+                type="button"
+                class="cursor-pointer text-[10px] font-semibold text-amber-500 flex items-center gap-1 hover:underline"
+                onclick={() => (n8nSettingsOpen = true)}
+              >
+                <span>⚙️ n8n Webhook</span>
+              </button>
+            {/if}
+          </div>
 
-        {#if customer}
-          <div class="flex items-center justify-between rounded-lg border border-ok/30 bg-ok/5 px-3 py-2 text-xs">
-            <div>
-              <div class="font-bold text-fg">{customer.name}</div>
-              <div class="font-mono text-[11px] text-muted">{customer.phone}</div>
-            </div>
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm h-7 w-7 p-0"
-              onclick={() => (customer = null)}
-              aria-label="Remove customer"
-            >
-              <X class="h-3.5 w-3.5" />
-            </button>
-          </div>
-        {:else if newCustOpen}
-          <div class="rounded-lg border border-line bg-raised/50 p-2.5 space-y-2">
-            <div class="grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                class="input h-8 text-xs"
-                placeholder="Customer Name *"
-                bind:value={newCustName}
-              />
-              <input
-                type="tel"
-                class="input h-8 text-xs font-mono"
-                placeholder="Phone (077...)"
-                bind:value={newCustPhone}
-              />
-            </div>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm w-full h-8 text-xs"
-              onclick={saveNewCustomer}
-              disabled={custBusy}
-            >
-              <span>{custBusy ? 'Saving...' : 'Save & Attach Customer'}</span>
-            </button>
-          </div>
-        {:else}
           <div class="relative">
             <Phone class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dim" />
             <input
-              type="text"
-              class="input h-9 pl-8 text-xs"
-              placeholder="Customer Phone for WhatsApp Bill (e.g. 0771234567) or Name..."
-              bind:value={custQuery}
-              oninput={onCustSearchInput}
+              type="tel"
+              class="input h-10 pl-8 pr-8 text-xs font-mono font-bold {whatsappPhone.trim() ? 'border-ok/40 bg-ok/5' : ''}"
+              placeholder="e.g. 077 123 4567 (WhatsApp Number)"
+              bind:value={whatsappPhone}
             />
-            {#if custResults.length > 0}
-              <div class="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-lg border border-line bg-surface shadow-xl">
-                {#each custResults as c (c.id)}
-                  <button
-                    type="button"
-                    class="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-xs hover:bg-raised"
-                    onclick={() => {
-                      customer = c;
-                      whatsappPhone = c.phone || '';
-                      custResults = [];
-                      custQuery = '';
-                    }}
-                  >
-                    <span class="font-semibold text-fg">{c.name}</span>
-                    <span class="font-mono text-muted">{c.phone}</span>
-                  </button>
-                {/each}
-              </div>
+            {#if whatsappPhone}
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted hover:text-fg"
+                onclick={() => (whatsappPhone = '')}
+                aria-label="Clear phone"
+              >
+                <X class="h-3.5 w-3.5" />
+              </button>
             {/if}
           </div>
-        {/if}
+        </div>
+
+        <!-- Attached Customer / Profile Lookup -->
+        <div class="border-t border-line/60 pt-2.5">
+          {#if customer}
+            <div class="flex items-center justify-between rounded-lg border border-ok/30 bg-ok/5 px-3 py-2 text-xs">
+              <div class="flex items-center gap-2">
+                <User class="h-3.5 w-3.5 text-ok shrink-0" />
+                <div>
+                  <div class="font-bold text-fg">{customer.name}</div>
+                  {#if customer.phone}
+                    <div class="font-mono text-[11px] text-muted">{customer.phone}</div>
+                  {/if}
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm h-7 w-7 p-0 text-muted hover:text-fg"
+                onclick={() => (customer = null)}
+                aria-label="Remove customer"
+              >
+                <X class="h-3.5 w-3.5" />
+              </button>
+            </div>
+          {:else if newCustOpen}
+            <div class="rounded-lg border border-line bg-raised/50 p-2.5 space-y-2">
+              <div class="text-[11px] font-bold text-fg">New Customer Registration</div>
+              <div class="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  class="input h-8 text-xs"
+                  placeholder="Customer Name *"
+                  bind:value={newCustName}
+                />
+                <input
+                  type="tel"
+                  class="input h-8 text-xs font-mono"
+                  placeholder="Phone (077...)"
+                  bind:value={newCustPhone}
+                />
+              </div>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm h-8 flex-1 text-xs"
+                  onclick={() => (newCustOpen = false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm h-8 flex-1 text-xs"
+                  onclick={saveNewCustomer}
+                  disabled={custBusy}
+                >
+                  <span>{custBusy ? 'Saving...' : 'Save & Attach'}</span>
+                </button>
+              </div>
+            </div>
+          {:else}
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-muted">Attach Customer Profile (Optional):</span>
+                <button
+                  type="button"
+                  class="cursor-pointer font-semibold text-ok hover:underline"
+                  onclick={() => (newCustOpen = true)}
+                >
+                  + New Customer
+                </button>
+              </div>
+
+              <div class="relative">
+                <Search class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dim" />
+                <input
+                  type="text"
+                  class="input h-8 pl-8 text-xs"
+                  placeholder="Search existing customer by name..."
+                  bind:value={custQuery}
+                  oninput={onCustSearchInput}
+                />
+                {#if custResults.length > 0}
+                  <div class="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-lg border border-line bg-surface shadow-xl">
+                    {#each custResults as c (c.id)}
+                      <button
+                        type="button"
+                        class="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-xs hover:bg-raised"
+                        onclick={() => {
+                          customer = c;
+                          if (!whatsappPhone.trim() && c.phone) whatsappPhone = c.phone;
+                          custResults = [];
+                          custQuery = '';
+                        }}
+                      >
+                        <span class="font-semibold text-fg">{c.name}</span>
+                        <span class="font-mono text-muted">{c.phone}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
       </div>
 
       <!-- Settlement Summary Card -->
@@ -1867,6 +1995,58 @@
           </div>
         {/if}
 
+        <!-- WhatsApp n8n VPS Auto-Send Toggle -->
+        <label
+          class="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-line bg-surface p-3 select-none"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="relative shrink-0">
+              <MessageCircle class="h-4 w-4 {autoN8nSend ? 'text-ok' : 'text-dim'}" />
+              {#if n8nWebhookUrl.trim()}
+                <span class="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-surface"></span>
+              {:else}
+                <span class="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-surface"></span>
+              {/if}
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-bold text-fg">
+                  Send Digital Bill via WhatsApp (VPS n8n)
+                </span>
+                {#if n8nWebhookUrl.trim()}
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                    VPS Connected
+                  </span>
+                {:else}
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:underline"
+                    onclick={() => (n8nSettingsOpen = true)}
+                  >
+                    ⚙️ Setup Webhook
+                  </button>
+                {/if}
+              </div>
+              <div class="text-[10px] text-muted truncate">
+                {#if whatsappPhone.trim()}
+                  බිල සම්පූර්ණ වූ සැනින් <strong>{whatsappPhone}</strong> ට WhatsApp යැවේ
+                {:else}
+                  Customer ගේ WhatsApp අංකය ඇති විට ස්වයංක්‍රීයව WhatsApp බිල යැවේ
+                {/if}
+              </div>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            class="h-4 w-4 shrink-0 cursor-pointer accent-emerald-500"
+            checked={autoN8nSend}
+            onchange={(e) => {
+              autoN8nSend = (e.currentTarget as HTMLInputElement).checked;
+              saveN8nAutoSend(autoN8nSend);
+            }}
+          />
+        </label>
+
         <!-- Counter PC Printer Auto-Print Toggle -->
         <label
           class="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-line bg-surface p-3 select-none"
@@ -1921,13 +2101,16 @@
         <div class="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
           <button
             type="button"
-            class="btn btn-primary h-12 text-sm font-bold shadow-md"
+            class="btn {whatsappPhone.trim() && autoN8nSend ? 'bg-emerald-600 hover:bg-emerald-500 text-white font-black' : 'btn-primary'} h-12 text-sm font-bold shadow-md cursor-pointer"
             onclick={() => completeSale(false)}
             disabled={busy || lines.length === 0}
           >
             {#if busy}
               <Loader2 class="h-4 w-4 animate-spin" />
               <span>Processing...</span>
+            {:else if whatsappPhone.trim() && autoN8nSend}
+              <MessageCircle class="h-4 w-4 text-emerald-100" />
+              <span>Complete &amp; WhatsApp Bill (බිල ගසන්න)</span>
             {:else}
               <MessageCircle class="h-4 w-4" />
               <span>Complete &amp; Receipt (බිල දාන්න)</span>
@@ -2829,6 +3012,16 @@
     receipt={activeReceipt}
     success={receiptIsSuccess}
     onclose={() => (activeReceipt = null)}
+  />
+{/if}
+
+{#if n8nSettingsOpen}
+  <N8nSettingsModal
+    onclose={() => {
+      n8nSettingsOpen = false;
+      n8nWebhookUrl = loadN8nWebhookUrl();
+      autoN8nSend = loadN8nAutoSend();
+    }}
   />
 {/if}
 

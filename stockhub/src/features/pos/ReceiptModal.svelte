@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CheckCircle2, Printer, X, MessageCircle, Copy, Phone, Loader2 } from 'lucide-svelte';
+  import { CheckCircle2, Printer, X, MessageCircle, Copy, Phone, Loader2, Send, Globe, ExternalLink, AlertTriangle } from 'lucide-svelte';
   import { app, fmtMoney } from '../../lib/app.svelte';
   import {
     type PosReceiptDetails,
@@ -8,6 +8,10 @@
     openWhatsAppReceipt,
     printPosThermalReceipt,
     sendReceiptToPcPrinter,
+    sendBillToN8nWebhook,
+    getReceiptOnlineUrl,
+    loadN8nWebhookUrl,
+    formatPhoneDisplay,
   } from './logic';
 
   let {
@@ -23,10 +27,19 @@
   let phoneInput = $state('');
   let pcPrintBusy = $state(false);
   let pcPrintDone = $state(false);
+  let n8nBusy = $state(false);
+  let n8nSent = $state(false);
+  let n8nMessage = $state('');
 
   $effect(() => {
     phoneInput = receipt.customerPhone || receipt.customer?.phone || '';
+    if (receipt.n8nStatus) {
+      n8nSent = receipt.n8nStatus.ok;
+      n8nMessage = receipt.n8nStatus.message || '';
+    }
   });
+
+  const receiptWebUrl = $derived(getReceiptOnlineUrl(receipt.id));
 
   function handlePrint(width: '80mm' | '58mm') {
     if (!printPosThermalReceipt(receipt, width)) {
@@ -50,14 +63,40 @@
     }
   }
 
+  async function handleSendViaN8n() {
+    if (!phoneInput.trim()) {
+      app.toast('Please enter the customer phone number for WhatsApp.', 'warning');
+      return;
+    }
+    const webhookUrl = loadN8nWebhookUrl();
+    if (!webhookUrl) {
+      app.toast('n8n Webhook URL is not configured. Please set your VPS Webhook in POS Settings.', 'warning');
+      return;
+    }
+    n8nBusy = true;
+    try {
+      const res = await sendBillToN8nWebhook(receipt, phoneInput);
+      n8nMessage = res.message;
+      if (res.ok) {
+        n8nSent = true;
+        app.toast(res.message, 'success');
+      } else {
+        n8nSent = false;
+        app.toast(res.message, 'warning');
+      }
+    } finally {
+      n8nBusy = false;
+    }
+  }
+
   function handleWhatsApp() {
     openWhatsAppReceipt(receipt, phoneInput);
   }
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(buildWhatsAppReceiptText(receipt));
-      app.toast('Digital receipt copied to clipboard!', 'success');
+      await navigator.clipboard.writeText(buildWhatsAppReceiptText(receipt, receiptWebUrl));
+      app.toast('Digital receipt text copied to clipboard!', 'success');
     } catch {
       app.toast('Could not copy receipt text.', 'error');
     }
@@ -145,32 +184,85 @@
         </button>
       </div>
 
-      <!-- WhatsApp Digital Bill Box (Power-Outage Friendly!) -->
-      <div class="rounded-xl border border-ok/30 bg-ok/5 p-3 space-y-2">
+      <!-- WhatsApp Digital Bill Box (Power-Outage & VPS n8n Ready) -->
+      <div class="rounded-xl border border-ok/30 bg-ok/5 p-3.5 space-y-2.5">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold text-fg flex items-center gap-1.5">
-            <MessageCircle class="h-4 w-4 text-ok" />
-            <span>Send Digital Bill via WhatsApp (Customer ගේ Phone එකට)</span>
+            <MessageCircle class="h-4 w-4 text-ok shrink-0" />
+            <span>Customer WhatsApp Digital Bill (ඩිජිටල් බිල)</span>
           </span>
+          {#if receiptWebUrl}
+            <a
+              href={receiptWebUrl}
+              target="_blank"
+              class="inline-flex items-center gap-1 text-[11px] font-semibold text-ok hover:underline"
+            >
+              <span>View E-Bill</span>
+              <ExternalLink class="h-3 w-3" />
+            </a>
+          {/if}
         </div>
-        <div class="flex gap-2">
-          <div class="relative flex-1">
+
+        {#if n8nSent}
+          <div class="flex items-center justify-between rounded-lg border border-ok/30 bg-ok/10 px-3 py-2 text-xs text-ok">
+            <div class="flex items-center gap-2">
+              <CheckCircle2 class="h-4 w-4 shrink-0" />
+              <span><strong>Sent to Customer WhatsApp!</strong> ({formatPhoneDisplay(phoneInput)})</span>
+            </div>
+            <button
+              type="button"
+              class="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-ok/80 hover:text-ok underline"
+              onclick={handleSendViaN8n}
+            >
+              Re-send
+            </button>
+          </div>
+        {:else if n8nMessage}
+          <div class="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+            <AlertTriangle class="h-4 w-4 shrink-0" />
+            <span class="leading-tight">{n8nMessage}</span>
+          </div>
+        {/if}
+
+        <div class="flex flex-wrap gap-2">
+          <div class="relative flex-1 min-w-[160px]">
             <Phone class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dim" />
             <input
               type="tel"
               class="input h-9 pl-8 text-xs font-mono"
-              placeholder="Customer Phone (e.g. 0771234567)"
+              placeholder="Customer Phone (0771234567)"
               bind:value={phoneInput}
             />
           </div>
+
+          <!-- Send via VPS n8n -->
           <button
             type="button"
-            class="btn btn-sm h-9 bg-ok text-black font-bold hover:opacity-90 border-0 shrink-0 px-3"
-            onclick={handleWhatsApp}
+            class="btn btn-sm h-9 bg-ok text-black font-bold hover:opacity-90 border-0 shrink-0 px-3 flex items-center gap-1.5"
+            onclick={handleSendViaN8n}
+            disabled={n8nBusy || !phoneInput.trim()}
           >
-            <MessageCircle class="h-3.5 w-3.5" />
-            <span>WhatsApp Bill</span>
+            {#if n8nBusy}
+              <Loader2 class="h-3.5 w-3.5 animate-spin" />
+              <span>Sending...</span>
+            {:else}
+              <Send class="h-3.5 w-3.5" />
+              <span>Send via n8n</span>
+            {/if}
           </button>
+
+          <!-- Direct wa.me Fallback -->
+          <button
+            type="button"
+            class="btn btn-sm h-9 border border-line bg-surface hover:bg-raised text-fg font-semibold shrink-0 px-2.5 flex items-center gap-1.5"
+            onclick={handleWhatsApp}
+            title="Open in WhatsApp Web/App (Manual Fallback)"
+          >
+            <MessageCircle class="h-3.5 w-3.5 text-ok" />
+            <span class="hidden sm:inline">Direct wa.me</span>
+          </button>
+
+          <!-- Copy Button -->
           <button
             type="button"
             class="btn btn-sm h-9 shrink-0 px-2.5"

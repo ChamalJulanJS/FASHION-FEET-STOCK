@@ -1,0 +1,96 @@
+{
+  "name": "FashionFeet — Mobile POS WhatsApp Digital Bill",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fashionfeet-pos-bill",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c1f7b0e1-4567-4a8b-9012-3456789abcde",
+      "name": "POS Bill Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "webhookId": "fashionfeet-pos-bill"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare and validate POS Bill Payload from Fashion Feet Mobile POS\nconst body = $input.first().json.body || $input.first().json;\n\nconst phone = String(body.customer_phone || '').replace(/\\D/g, '');\nconst invoiceNo = body.display_invoice || body.invoice_no || 'INV';\nconst message = body.whatsapp_message || 'Thank you for shopping at Fashion Feet!';\nconst branch = body.branch_name || 'Fashion Feet';\nconst total = body.total || 0;\nconst receiptUrl = body.receipt_url || '';\n\nreturn [{\n  json: {\n    customer_phone: phone,\n    invoice_no: invoiceNo,\n    branch_name: branch,\n    total_amount: total,\n    message_text: message,\n    receipt_url: receiptUrl,\n    raw_payload: body\n  }\n}];"
+      },
+      "id": "e2a8c1f3-8901-4b2c-9d3e-456789abcdef",
+      "name": "Extract & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Receipt processed successfully for \" + $json.invoice_no,\n  \"customer_phone\": $json.customer_phone\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b3d9e2f4-9012-4c3d-ae4f-567890abcdef",
+      "name": "Respond to POS (HTTP 200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## HOW TO CONNECT YOUR WHATSAPP API IN N8N:\n\n1. If you use **Evolution API** on your VPS:\n   - Add an HTTP Request node here.\n   - Method: POST\n   - URL: `http://localhost:8080/message/sendText/{your-instance}`\n   - Body (JSON):\n     `{ \"number\": \"{{ $json.customer_phone }}\", \"text\": \"{{ $json.message_text }}\" }`\n\n2. If you use **Meta WhatsApp Cloud API**:\n   - Add the official `WhatsApp` node.\n   - Set Recipient Phone Number to `{{ $json.customer_phone }}`.\n   - Set Text Body to `{{ $json.message_text }}`.\n\n3. If you use **Baileys / Z-API / UltraMsg**:\n   - Use HTTP Request node with your VPS port and API token.",
+        "height": 260,
+        "width": 480
+      },
+      "id": "f4e0a3b5-0123-4d4e-bf5a-678901abcdef",
+      "name": "WhatsApp Gateway Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        680,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "POS Bill Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Respond to POS (HTTP 200)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+}
