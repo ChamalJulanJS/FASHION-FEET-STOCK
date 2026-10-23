@@ -5,7 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "fashionfeet-pos-bill",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "c1f7b0e1-4567-4a8b-9012-3456789abcde",
@@ -33,24 +33,7 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Receipt processed successfully for \" + $json.invoice_no,\n  \"customer_phone\": $json.customer_phone\n}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "b3d9e2f4-9012-4c3d-ae4f-567890abcdef",
-      "name": "Respond to POS (HTTP 200)",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        700,
-        180
-      ]
-    },
-    {
-      "parameters": {
-        "content": "## HOW TO CONNECT YOUR WHATSAPP API IN N8N:\n\n1. If you use **Evolution API** on your VPS:\n   - Add an HTTP Request node here.\n   - Method: POST\n   - URL: `http://localhost:8080/message/sendText/{your-instance}`\n   - Body (JSON):\n     `{ \"number\": \"{{ $json.customer_phone }}\", \"text\": \"{{ $json.message_text }}\" }`\n\n2. If you use **Meta WhatsApp Cloud API**:\n   - Add the official `WhatsApp` node.\n   - Set Recipient Phone Number to `{{ $json.customer_phone }}`.\n   - Set Text Body to `{{ $json.message_text }}`.\n\n3. If you use **Baileys / Z-API / UltraMsg**:\n   - Use HTTP Request node with your VPS port and API token.",
+        "content": "## HOW TO CONNECT YOUR WHATSAPP API IN N8N:\n\n1. If you use Evolution API on your VPS:\n   - Add an HTTP Request node connected to 'Extract & Format Data'.\n   - Method: POST\n   - URL: http://localhost:8080/message/sendText/{your-instance}\n   - Body (JSON):\n     { \"number\": \"{{ $json.customer_phone }}\", \"text\": \"{{ $json.message_text }}\" }\n\n2. If you use Meta WhatsApp Cloud API:\n   - Add the official WhatsApp node.\n   - Recipient: {{ $json.customer_phone }}\n   - Body: {{ $json.message_text }}\n\n3. If you use Baileys / Z-API / UltraMsg:\n   - Connect your WhatsApp Gateway node using {{ $json.customer_phone }} and {{ $json.message_text }}",
         "height": 260,
         "width": 480
       },
@@ -59,8 +42,8 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        680,
-        320
+        700,
+        280
       ]
     }
   ],
@@ -75,22 +58,10 @@
           }
         ]
       ]
-    },
-    "Extract & Format Data": {
-      "main": [
-        [
-          {
-            "node": "Respond to POS (HTTP 200)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
-  },
-  "versionId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+  }
 }

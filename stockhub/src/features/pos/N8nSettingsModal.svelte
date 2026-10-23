@@ -59,7 +59,7 @@
             parameters: {
               httpMethod: "POST",
               path: "fashionfeet-pos-bill",
-              responseMode: "responseNode"
+              responseMode: "onReceived"
             },
             name: "POS Bill Webhook",
             type: "n8n-nodes-base.webhook",
@@ -74,24 +74,11 @@
             type: "n8n-nodes-base.code",
             typeVersion: 2,
             position: [460, 300]
-          },
-          {
-            parameters: {
-              respondWith: "json",
-              responseBody: "={\n  \"success\": true,\n  \"invoice\": $json.invoice_no\n}"
-            },
-            name: "Respond to POS (200)",
-            type: "n8n-nodes-base.respondToWebhook",
-            typeVersion: 1.1,
-            position: [700, 200]
           }
         ],
         connections: {
           "POS Bill Webhook": {
             main: [[{ node: "Format Receipt", type: "main", index: 0 }]]
-          },
-          "Format Receipt": {
-            main: [[{ node: "Respond to POS (200)", type: "main", index: 0 }]]
           }
         }
       };
