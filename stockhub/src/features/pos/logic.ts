@@ -489,6 +489,8 @@ export async function sendBillToN8nWebhook(
     customer_name: r.customer?.name || 'Valued Customer',
     customer_phone: targetPhone,
     customer_phone_formatted: formatPhoneDisplay(targetPhone),
+    chat_id: `${targetPhone}@c.us`,
+    chatId: `${targetPhone}@c.us`,
     payment_method: String(r.paymentMethod).toUpperCase(),
     subtotal: r.subtotal,
     discount: r.discount,
@@ -509,6 +511,8 @@ export async function sendBillToN8nWebhook(
     })),
     receipt_url: receiptUrl,
     whatsapp_message: messageText,
+    formattedMessage: messageText,
+    text: messageText,
   };
 
   try {
@@ -580,6 +584,8 @@ export async function testN8nWebhook(webhookUrl: string): Promise<{ ok: boolean;
     customer_name: 'Test Customer',
     customer_phone: '94771234567',
     customer_phone_formatted: '077 123 4567',
+    chat_id: '94771234567@c.us',
+    chatId: '94771234567@c.us',
     payment_method: 'CASH',
     subtotal: 3500,
     discount: 500,
@@ -602,6 +608,8 @@ export async function testN8nWebhook(webhookUrl: string): Promise<{ ok: boolean;
     ],
     receipt_url: 'https://chamaljulanjs.github.io/FASHION-FEET-STOCK/receipt.html',
     whatsapp_message: '✨ *FASHION FEET POS TEST* ✨\nYour VPS n8n Webhook is working perfectly!',
+    formattedMessage: '✨ *FASHION FEET POS TEST* ✨\nYour VPS n8n Webhook is working perfectly!',
+    text: '✨ *FASHION FEET POS TEST* ✨\nYour VPS n8n Webhook is working perfectly!',
     test: true,
   };
 
