@@ -535,6 +535,27 @@
 
   // ---------------- customer lookup & quick create ----------------
   let custDebounce: ReturnType<typeof setTimeout> | undefined;
+  let wpDebounce: ReturnType<typeof setTimeout> | undefined;
+
+  function onWhatsAppPhoneInput() {
+    clearTimeout(wpDebounce);
+    const digits = whatsappPhone.replace(/\D/g, '');
+    if (digits.length >= 9) {
+      wpDebounce = setTimeout(async () => {
+        const local = digits.startsWith('0') ? digits : (digits.length === 9 ? '0' + digits : digits);
+        const norm = normalizeSlPhone(digits);
+        try {
+          const matched = await restGet<PosCustomer[]>(
+            `customers?or=(phone.eq.${encodeURIComponent(local)},phone.eq.${encodeURIComponent(digits)},phone.eq.${encodeURIComponent(norm)})&limit=1`,
+          );
+          if (matched && matched.length > 0) {
+            customer = matched[0];
+          }
+        } catch {}
+      }, 250);
+    }
+  }
+
   function onCustSearchInput() {
     clearTimeout(custDebounce);
     // If user typed a phone number directly, sync it with whatsappPhone
@@ -774,10 +795,55 @@
       const cashierId = app.currentUser?.id || null;
       const cashierName = app.currentUser?.name || 'Cashier';
 
+      // 0. Auto-resolve or create customer in database for the entered phone number
+      let saleCustomer = customer;
+      const targetPhoneInput = (whatsappPhone || customer?.phone || '').trim();
+      const cleanDigits = targetPhoneInput.replace(/\D/g, '');
+
+      if (cleanDigits.length >= 9) {
+        const localPhone = cleanDigits.startsWith('0')
+          ? cleanDigits
+          : (cleanDigits.length === 9 ? '0' + cleanDigits : cleanDigits);
+        const normPhone = normalizeSlPhone(cleanDigits);
+
+        if (!saleCustomer) {
+          try {
+            const matched = await restGet<PosCustomer[]>(
+              `customers?or=(phone.eq.${encodeURIComponent(localPhone)},phone.eq.${encodeURIComponent(cleanDigits)},phone.eq.${encodeURIComponent(normPhone)})&limit=1`,
+            );
+            if (matched && matched.length > 0) {
+              saleCustomer = matched[0];
+            } else {
+              // Create new customer record in Supabase
+              const created = await restWrite<PosCustomer[]>('POST', 'customers', {
+                name: `Customer ${localPhone}`,
+                phone: localPhone,
+                total_spend: finalTotal,
+                notes: 'Auto-created on Mobile POS Checkout',
+              });
+              if (created && (Array.isArray(created) ? created[0] : created)) {
+                saleCustomer = Array.isArray(created) ? created[0] : (created as any);
+              }
+            }
+          } catch (custErr) {
+            console.warn('Customer auto-create / lookup error:', custErr);
+          }
+        } else {
+          // Existing customer: update total_spend
+          try {
+            const newSpend = (Number(saleCustomer.total_spend) || 0) + finalTotal;
+            await restWrite('PATCH', `customers?id=eq.${saleCustomer.id}`, {
+              total_spend: newSpend,
+            });
+            saleCustomer.total_spend = newSpend;
+          } catch {}
+        }
+      }
+
       // 1. Insert into `sales` (safely saves cash_received and change_amount)
       const salePayload: Record<string, any> = {
         location_id: locationId,
-        customer_id: customer?.id || null,
+        customer_id: saleCustomer?.id || null,
         total: finalTotal,
         discount: finalDiscount,
         tax: 0,
@@ -853,10 +919,10 @@
       }
 
       // 3. Update customer total_spend if attached
-      if (customer?.id) {
+      if (saleCustomer?.id) {
         try {
-          await restWrite('PATCH', `customers?id=eq.${customer.id}`, {
-            total_spend: Number(customer.total_spend || 0) + finalTotal,
+          await restWrite('PATCH', `customers?id=eq.${saleCustomer.id}`, {
+            total_spend: Number(saleCustomer.total_spend || 0) + finalTotal,
           });
         } catch (e) {
           console.warn('Customer spend update warning:', e);
@@ -880,8 +946,8 @@
         locationId,
         branchName,
         cashierName,
-        customer,
-        customerPhone: whatsappPhone || customer?.phone || '',
+        customer: saleCustomer,
+        customerPhone: targetPhoneInput || saleCustomer?.phone || '',
         paymentMethod,
         subtotal: finalSubtotal,
         discount: finalDiscount,
@@ -1746,18 +1812,28 @@
               class="input h-10 pl-8 pr-8 text-xs font-mono font-bold {whatsappPhone.trim() ? 'border-ok/40 bg-ok/5' : ''}"
               placeholder="e.g. 077 123 4567 (WhatsApp Number)"
               bind:value={whatsappPhone}
+              oninput={onWhatsAppPhoneInput}
             />
             {#if whatsappPhone}
               <button
                 type="button"
                 class="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted hover:text-fg"
-                onclick={() => (whatsappPhone = '')}
+                onclick={() => {
+                  whatsappPhone = '';
+                  customer = null;
+                }}
                 aria-label="Clear phone"
               >
                 <X class="h-3.5 w-3.5" />
               </button>
             {/if}
           </div>
+          {#if !customer && whatsappPhone.trim().replace(/\D/g, '').length >= 9}
+            <div class="flex items-center gap-1.5 text-[10.5px] text-ok font-medium pt-0.5">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+              <span>✨ Customer will be automatically registered to database on bill completion</span>
+            </div>
+          {/if}
         </div>
 
         <!-- Attached Customer / Profile Lookup -->
