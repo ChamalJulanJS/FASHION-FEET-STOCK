@@ -869,8 +869,8 @@
         subtotal: finalSubtotal,
         discount: finalDiscount,
         grandTotal: finalTotal,
-        cashReceived: finalCash,
-        changeAmount: finalChange,
+        cashReceived: finalCash > 0 ? finalCash : (paymentMethod === 'cash' ? finalTotal : 0),
+        changeAmount: finalCash > 0 ? finalChange : 0,
         items: snapshotLines.map((l) => {
           const netPrice = Math.max(0, l.unitPrice - (l.itemDiscount || 0));
           return {

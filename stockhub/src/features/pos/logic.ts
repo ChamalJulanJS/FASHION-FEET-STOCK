@@ -359,10 +359,11 @@ export function getReceiptOnlineUrl(saleId?: string): string {
 export function buildWhatsAppReceiptText(r: PosReceiptDetails, receiptUrl?: string): string {
   const inv = formatInvoiceNo(r.invoiceNo, r.id);
   const totalPairs = r.items.reduce((s, i) => s + i.qty, 0);
+  const branchHeader = (r.branchName || 'SHOE GALLERY').toUpperCase();
   const lines: string[] = [];
-  lines.push(`✨ *FASHION FEET — OFFICIAL RECEIPT* ✨`);
+  lines.push(`✨ *${branchHeader} — OFFICIAL RECEIPT* ✨`);
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━━`);
-  lines.push(`📍 *Branch:* ${r.branchName}`);
+  lines.push(`📍 *Branch:* ${r.branchName || 'Shoe Gallery'}`);
   lines.push(`🧾 *Invoice:* *${inv}*`);
   lines.push(`📅 *Date:* ${r.date}`);
   if (r.customer?.name) {
@@ -387,9 +388,11 @@ export function buildWhatsAppReceiptText(r: PosReceiptDetails, receiptUrl?: stri
   }
   lines.push(`💳 *GRAND TOTAL: Rs. ${fmtMoney(r.grandTotal)}*`);
   lines.push(`🪙 *Payment Method:* ${String(r.paymentMethod).toUpperCase()}`);
-  if (r.cashReceived > 0) {
-    lines.push(`💵 *Cash Received:* Rs. ${fmtMoney(r.cashReceived)}`);
-    lines.push(`🪙 *Change Given:* *Rs. ${fmtMoney(r.changeAmount)}*`);
+  if (String(r.paymentMethod).toLowerCase() === 'cash' || r.cashReceived > 0) {
+    const tendered = r.cashReceived > 0 ? r.cashReceived : r.grandTotal;
+    const change = r.changeAmount >= 0 ? r.changeAmount : Math.max(0, tendered - r.grandTotal);
+    lines.push(`💵 *Cash Received (ලැබුණු මුදල):* Rs. ${fmtMoney(tendered)}`);
+    lines.push(`🪙 *Change Given (ඉතිරි මුදල):* *Rs. ${fmtMoney(change)}*`);
   }
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━━`);
   const finalUrl = receiptUrl || getReceiptOnlineUrl(r.id);
@@ -401,7 +404,7 @@ export function buildWhatsAppReceiptText(r: PosReceiptDetails, receiptUrl?: stri
   lines.push(`⚠️ *Exchange Policy:*`);
   lines.push(`Exchange within 7 days with this digital invoice & unworn condition.`);
   lines.push(``);
-  lines.push(`❤️ *Thank you for shopping at Fashion Feet!*`);
+  lines.push(`❤️ *Thank you for shopping at ${r.branchName || 'Shoe Gallery'}!*`);
   return lines.join('\n');
 }
 
@@ -454,21 +457,17 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
 
     let y = 46;
 
-    // Header - Brand Name
+    // Header - Branch Name ONLY (e.g. SHOE GALLERY)
+    const branchTitle = String(r.branchName || 'SHOE GALLERY').toUpperCase();
     ctx.fillStyle = '#0f172a';
-    ctx.font = '900 25px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = '900 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('FASHION FEET', width / 2, y);
+    ctx.fillText(branchTitle, width / 2, y);
 
-    y += 22;
-    ctx.font = '800 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    y += 24;
+    ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#059669'; // Emerald
-    ctx.fillText(String(r.branchName || 'SHOE GALLERY').toUpperCase(), width / 2, y);
-
-    y += 18;
-    ctx.font = '600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.fillText('PREMIUM FOOTWEAR & ACCESSORIES · OFFICIAL E-RECEIPT', width / 2, y);
+    ctx.fillText('FOOTWEAR & ACCESSORIES · OFFICIAL DIGITAL RECEIPT', width / 2, y);
 
     y += 16;
     function drawDashed(currY: number) {
@@ -605,15 +604,32 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     ctx.fillText(`Rs. ${r.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 40, y + 28);
     y += 62;
 
-    // Settlement Info
-    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#475569';
+    // Settlement Breakdown Box (Cash Received & Change Given)
+    const isCash = String(r.paymentMethod).toLowerCase() === 'cash' || r.cashReceived > 0;
+    const tendered = r.cashReceived > 0 ? r.cashReceived : r.grandTotal;
+    const change = r.changeAmount >= 0 ? r.changeAmount : Math.max(0, tendered - r.grandTotal);
+
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#1e293b';
     ctx.textAlign = 'left';
     ctx.fillText(`Payment Method: ${String(r.paymentMethod).toUpperCase()}`, 25, y);
 
-    if (r.cashReceived > 0) {
+    if (isCash) {
+      y += 20;
+      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#334155';
+      ctx.textAlign = 'left';
+      ctx.fillText('Cash Received (ලැබුණු මුදල):', 25, y);
       ctx.textAlign = 'right';
-      ctx.fillText(`Cash: Rs. ${r.cashReceived.toLocaleString()} | Change: Rs. ${r.changeAmount.toLocaleString()}`, width - 25, y);
+      ctx.fillText(`Rs. ${tendered.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
+
+      y += 18;
+      ctx.font = 'bold 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#059669'; // Emerald
+      ctx.textAlign = 'left';
+      ctx.fillText('Change Given (ඉතිරි මුදල):', 25, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`Rs. ${change.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
     }
     y += 22;
 
@@ -629,14 +645,14 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     y += 16;
     ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#64748b';
-    ctx.fillText('Exchanges accepted within 7 days at any Fashion Feet branch', width / 2, y);
+    ctx.fillText(`Exchanges accepted within 7 days at ${branchTitle}`, width / 2, y);
     y += 14;
     ctx.fillText('Item must be unworn with original tags & this verified receipt.', width / 2, y);
 
     y += 20;
-    ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#0f172a';
-    ctx.fillText('Thank You for Shopping at Fashion Feet!', width / 2, y);
+    ctx.fillText(`Thank You for Shopping at ${branchTitle}!`, width / 2, y);
 
     // Export as high-quality JPEG and strip data:image/... prefix for WAHA / WhatsApp
     const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
