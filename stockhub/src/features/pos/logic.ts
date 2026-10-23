@@ -416,19 +416,19 @@ export function openWhatsAppReceipt(r: PosReceiptDetails, phoneInput?: string) {
 }
 
 /**
- * Generates a high-resolution, pixel-perfect PNG receipt image as a Base64 string.
- * Renders on a 2x Retina canvas with Fashion Feet official branding, item details,
- * and financial breakdown for sending via WhatsApp Image API (WAHA / Baileys).
+ * Generates an ultra-detailed, premium, high-resolution JPEG receipt slip image as a Base64 string.
+ * Renders on a 2x Retina canvas with Fashion Feet official branding, full shoe metadata
+ * (UK/EU size, colour, SKU, item breakdown), financial totals, exchange warranty, and online verification.
  */
 export function generateReceiptImageBase64(r: PosReceiptDetails): string {
   if (typeof document === 'undefined') return '';
   try {
-    const scale = 2; // Retina sharpness
-    const width = 560;
-    const headerHeight = 220;
-    const itemsHeight = Math.max(r.items.length * 62, 80);
-    const totalsHeight = (r.discount > 0 ? 25 : 0) + (r.cashReceived > 0 ? 55 : 0) + 150;
-    const footerHeight = 120;
+    const scale = 2; // Retina 2x sharpness
+    const width = 600;
+    const headerHeight = 240;
+    const itemsHeight = Math.max(r.items.length * 68, 90);
+    const totalsHeight = (r.discount > 0 ? 26 : 0) + (r.cashReceived > 0 ? 56 : 0) + 160;
+    const footerHeight = 150;
     const height = headerHeight + itemsHeight + totalsHeight + footerHeight;
 
     const canvas = document.createElement('canvas');
@@ -443,30 +443,34 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
-    // Outer subtle border
+    // Top Emerald Brand Strip
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(0, 0, width, 5);
+
+    // Outer subtle receipt border
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 1;
     ctx.strokeRect(12, 12, width - 24, height - 24);
 
-    let y = 50;
+    let y = 46;
 
-    // Header Brand
+    // Header - Brand Name
     ctx.fillStyle = '#0f172a';
-    ctx.font = '900 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = '900 25px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('FASHION FEET', width / 2, y);
 
-    y += 24;
-    ctx.font = '700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#10b981'; // Emerald brand accent
-    ctx.fillText(String(r.branchName || 'RETAIL OUTLET').toUpperCase(), width / 2, y);
+    y += 22;
+    ctx.font = '800 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#059669'; // Emerald
+    ctx.fillText(String(r.branchName || 'SHOE GALLERY').toUpperCase(), width / 2, y);
 
     y += 18;
     ctx.font = '600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#64748b';
-    ctx.fillText('FOOTWEAR & ACCESSORIES · OFFICIAL DIGITAL RECEIPT', width / 2, y);
+    ctx.fillText('PREMIUM FOOTWEAR & ACCESSORIES · OFFICIAL E-RECEIPT', width / 2, y);
 
-    y += 18;
+    y += 16;
     function drawDashed(currY: number) {
       ctx!.save();
       ctx!.beginPath();
@@ -482,12 +486,12 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     drawDashed(y);
     y += 24;
 
-    // Invoice Meta
+    // Invoice Meta Grid
     const inv = formatInvoiceNo(r.invoiceNo, r.id);
     ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = '#0f172a';
     ctx.textAlign = 'left';
-    ctx.fillText(`Invoice: ${inv}`, 25, y);
+    ctx.fillText(`Invoice No: ${inv}`, 25, y);
     ctx.textAlign = 'right';
     ctx.fillText(`Date: ${r.date}`, width - 25, y);
 
@@ -495,10 +499,18 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#475569';
     ctx.textAlign = 'left';
-    ctx.fillText(`Cashier: ${r.cashierName || 'Staff'}`, 25, y);
+    ctx.fillText(`Cashier: ${r.cashierName || 'Staff Cashier'}`, 25, y);
     if (r.customer?.name) {
       ctx.textAlign = 'right';
       ctx.fillText(`Customer: ${r.customer.name}`, width - 25, y);
+    }
+
+    if (r.customerPhone) {
+      y += 16;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#64748b';
+      ctx.font = '600 10.5px monospace';
+      ctx.fillText(`Tel: ${r.customerPhone}`, width - 25, y);
     }
 
     y += 16;
@@ -506,32 +518,37 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     y += 22;
 
     // Table Header
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.textAlign = 'left';
-    ctx.fillText('ITEM / DESCRIPTION', 25, y);
-    ctx.textAlign = 'center';
-    ctx.fillText('QTY', width - 140, y);
-    ctx.textAlign = 'right';
-    ctx.fillText('AMOUNT (LKR)', width - 25, y);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(25, y - 14, width - 50, 24);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeRect(25, y - 14, width - 50, 24);
 
-    y += 8;
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(25, y, width - 50, 1);
-    y += 18;
+    ctx.font = 'bold 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = 'left';
+    ctx.fillText('ITEM / DESCRIPTION', 32, y + 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('QTY', width - 150, y + 2);
+    ctx.textAlign = 'right';
+    ctx.fillText('TOTAL (LKR)', width - 32, y + 2);
+
+    y += 22;
 
     // Items
-    r.items.forEach((it) => {
+    r.items.forEach((it, idx) => {
+      const num = `${idx + 1}. `;
+      const itemName = `${it.brand ? it.brand + ' ' : ''}${it.name}`;
+      const fullName = num + itemName;
+      const truncated = fullName.length > 34 ? fullName.slice(0, 32) + '...' : fullName;
+
       ctx.font = 'bold 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.fillStyle = '#0f172a';
       ctx.textAlign = 'left';
-      const itemName = `${it.brand ? it.brand + ' ' : ''}${it.name}`;
-      const truncated = itemName.length > 30 ? itemName.slice(0, 28) + '...' : itemName;
       ctx.fillText(truncated, 25, y);
 
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(String(it.qty), width - 140, y);
+      ctx.fillText(String(it.qty), width - 150, y);
 
       ctx.textAlign = 'right';
       ctx.fillText(it.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2 }), width - 25, y);
@@ -542,22 +559,23 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
       ctx.textAlign = 'left';
       const sz = it.displaySize && it.displaySize !== '-' ? `Sz: ${it.displaySize}` : (it.size ? `Sz: ${it.size}` : '');
       const details = [it.sku, sz, it.colour].filter(Boolean).join(' | ');
-      ctx.fillText(details, 25, y);
+      ctx.fillText(details, 38, y);
 
       ctx.textAlign = 'right';
       ctx.fillText(`@ Rs. ${it.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
 
-      y += 24;
+      y += 26;
     });
 
     drawDashed(y);
-    y += 24;
+    y += 22;
 
-    // Totals
-    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    // Financial Breakdown
+    const totalPairs = r.items.reduce((s, i) => s + i.qty, 0);
+    ctx.font = '600 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#475569';
     ctx.textAlign = 'left';
-    ctx.fillText('Subtotal', 25, y);
+    ctx.fillText(`Subtotal (${totalPairs} Pair${totalPairs === 1 ? '' : 's'})`, 25, y);
     ctx.textAlign = 'right';
     ctx.fillText(`Rs. ${r.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
     y += 20;
@@ -565,34 +583,33 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     if (r.discount > 0) {
       ctx.fillStyle = '#d97706';
       ctx.textAlign = 'left';
-      ctx.fillText('Discount (වට්ටම)', 25, y);
+      ctx.fillText('Special Discount (වට්ටම)', 25, y);
       ctx.textAlign = 'right';
       ctx.fillText(`- Rs. ${r.discount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 25, y);
       y += 20;
     }
 
-    // Grand Total Box
+    // Grand Total Highlight Box
     y += 4;
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(25, y, width - 50, 42);
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(25, y, width - 50, 42);
+    ctx.fillStyle = '#0f172a'; // Luxury Dark Navy
+    ctx.fillRect(25, y, width - 50, 44);
 
-    ctx.font = '900 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'left';
-    ctx.fillText('GRAND TOTAL', 40, y + 26);
+    ctx.fillText('GRAND TOTAL (මුළු මුදල)', 40, y + 27);
 
+    ctx.font = '900 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#34d399'; // Bright emerald
     ctx.textAlign = 'right';
-    ctx.fillText(`Rs. ${r.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 40, y + 26);
-    y += 58;
+    ctx.fillText(`Rs. ${r.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, width - 40, y + 28);
+    y += 62;
 
-    // Payment details
+    // Settlement Info
     ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#475569';
     ctx.textAlign = 'left';
-    ctx.fillText(`Payment: ${String(r.paymentMethod).toUpperCase()}`, 25, y);
+    ctx.fillText(`Payment Method: ${String(r.paymentMethod).toUpperCase()}`, 25, y);
 
     if (r.cashReceived > 0) {
       ctx.textAlign = 'right';
@@ -601,21 +618,34 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     y += 22;
 
     drawDashed(y);
-    y += 26;
+    y += 24;
 
-    // Footer
-    ctx.font = '600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.textAlign = 'center';
-    ctx.fillText('Exchange within 7 days with this digital invoice & unworn condition.', width / 2, y);
-    y += 18;
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    // Warranty & Policy Details
+    ctx.font = 'bold 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#0f172a';
-    ctx.fillText('Thank you for shopping at Fashion Feet!', width / 2, y);
+    ctx.textAlign = 'center';
+    ctx.fillText('7-DAY EXCHANGE GUARANTEE', width / 2, y);
+
+    y += 16;
+    ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('Exchanges accepted within 7 days at any Fashion Feet branch', width / 2, y);
+    y += 14;
+    ctx.fillText('Item must be unworn with original tags & this verified receipt.', width / 2, y);
+
+    y += 20;
+    ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText('Thank You for Shopping at Fashion Feet!', width / 2, y);
 
     // Export as high-quality JPEG and strip data:image/... prefix for WAHA / WhatsApp
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
     return dataUrl.replace(/^data:image\/[a-z]+;base64,/, '').trim();
+  } catch (e) {
+    console.warn('Canvas receipt generation failed:', e);
+    return '';
+  }
+}
   } catch (e) {
     console.warn('Canvas receipt generation failed:', e);
     return '';
