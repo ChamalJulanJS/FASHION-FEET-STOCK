@@ -774,7 +774,7 @@
       const cashierId = app.currentUser?.id || null;
       const cashierName = app.currentUser?.name || 'Cashier';
 
-      // 1. Insert into `sales`
+      // 1. Insert into `sales` (safely saves cash_received and change_amount)
       const salePayload: Record<string, any> = {
         location_id: locationId,
         customer_id: customer?.id || null,
@@ -786,7 +786,24 @@
       };
       if (cashierId) salePayload.cashier_id = cashierId;
 
-      const saleRes = await restWrite<any[]>('POST', 'sales', salePayload);
+      const payloadWithCash: Record<string, any> = { ...salePayload };
+      if (paymentMethod === 'cash') {
+        payloadWithCash.cash_received = finalCash > 0 ? finalCash : finalTotal;
+        payloadWithCash.change_amount = finalCash > 0 ? finalChange : 0;
+      }
+
+      let saleRes: any;
+      try {
+        saleRes = await restWrite<any[]>('POST', 'sales', payloadWithCash);
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (msg.includes('cash_received') || msg.includes('schema cache') || msg.includes('column')) {
+          // Fallback if cash_received column is not yet created in Supabase schema
+          saleRes = await restWrite<any[]>('POST', 'sales', salePayload);
+        } else {
+          throw err;
+        }
+      }
       const saleRow = Array.isArray(saleRes) ? saleRes[0] : saleRes;
       if (!saleRow?.id) throw new Error('Sale record was not returned by database.');
 
@@ -968,9 +985,18 @@
     if (!locId) return;
     loadingSales = true;
     try {
-      const data = await restGet<any[]>(
-        `sales?location_id=eq.${locId}&select=id,invoice_no,total,discount,payment_method,status,created_at,customer_id,cashier_id,customers(id,name,phone),sale_items(id,variant_id,quantity,unit_price,cost_price,discount,product_variants(id,sku,size,colour,barcode,products(name,brand,category)))&order=created_at.desc&limit=50`,
-      );
+      let data: any[] | null = null;
+      try {
+        // Try fetching with cash_received and change_amount
+        data = await restGet<any[]>(
+          `sales?location_id=eq.${locId}&select=id,invoice_no,total,discount,cash_received,change_amount,payment_method,status,created_at,customer_id,cashier_id,customers(id,name,phone),sale_items(id,variant_id,quantity,unit_price,cost_price,discount,product_variants(id,sku,size,colour,barcode,products(name,brand,category)))&order=created_at.desc&limit=50`,
+        );
+      } catch {
+        // Graceful fallback if columns are not yet in Supabase schema
+        data = await restGet<any[]>(
+          `sales?location_id=eq.${locId}&select=id,invoice_no,total,discount,payment_method,status,created_at,customer_id,cashier_id,customers(id,name,phone),sale_items(id,variant_id,quantity,unit_price,cost_price,discount,product_variants(id,sku,size,colour,barcode,products(name,brand,category)))&order=created_at.desc&limit=50`,
+        );
+      }
       recentSales = data || [];
     } catch (e) {
       console.warn('Could not load recent sales', e);
@@ -1129,8 +1155,8 @@
       subtotal: tot + disc,
       discount: disc,
       grandTotal: tot,
-      cashReceived: 0,
-      changeAmount: 0,
+      cashReceived: Number(s.cash_received || 0),
+      changeAmount: Number(s.change_amount || 0),
       items,
     };
   }

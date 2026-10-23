@@ -504,13 +504,20 @@
       }
 
       try {
-        // Query sale details + location + customer
-        const saleUrl = `${SUPABASE_URL}/sales?id=eq.${encodeURIComponent(saleId)}&select=id,invoice_no,created_at,total,discount,tax,payment_method,status,locations(name,phone,address),customers(name,phone),sale_items(id,quantity,unit_price,discount,product_variants(id,sku,size,colour,products(name,brand)))`;
-        
-        const res = await fetch(saleUrl, { headers: HEADERS });
-        if (!res.ok) throw new Error('Could not fetch receipt record (HTTP ' + res.status + ')');
-        
-        const rows = await res.json();
+        // Query sale details + location + customer (with cash_received and change_amount if present)
+        let rows = [];
+        try {
+          const saleUrl = `${SUPABASE_URL}/sales?id=eq.${encodeURIComponent(saleId)}&select=id,invoice_no,created_at,total,discount,tax,payment_method,cash_received,change_amount,status,locations(name,phone,address),customers(name,phone),sale_items(id,quantity,unit_price,discount,product_variants(id,sku,size,colour,products(name,brand)))`;
+          const res = await fetch(saleUrl, { headers: HEADERS });
+          if (res.ok) rows = await res.json();
+        } catch {}
+
+        if (!rows || rows.length === 0) {
+          const fallbackUrl = `${SUPABASE_URL}/sales?id=eq.${encodeURIComponent(saleId)}&select=id,invoice_no,created_at,total,discount,tax,payment_method,status,locations(name,phone,address),customers(name,phone),sale_items(id,quantity,unit_price,discount,product_variants(id,sku,size,colour,products(name,brand)))`;
+          const res = await fetch(fallbackUrl, { headers: HEADERS });
+          if (!res.ok) throw new Error('Could not fetch receipt record (HTTP ' + res.status + ')');
+          rows = await res.json();
+        }
         if (!rows || rows.length === 0) {
           throw new Error('Invoice record was not found or may have been archived.');
         }
@@ -628,6 +635,16 @@
                 <span>Total Paid</span>
                 <span class="grand-total-amount">Rs. ${fmtMoney(total)}</span>
               </div>
+              ${Number(sale.cash_received || 0) > 0 ? `
+                <div class="sum-row" style="margin-top:6px; border-top:1px dashed var(--border); padding-top:6px;">
+                  <span>Cash Received (ලැබුණු මුදල)</span>
+                  <span style="font-family:var(--mono);">Rs. ${fmtMoney(Number(sale.cash_received))}</span>
+                </div>
+                <div class="sum-row" style="color:#10b981; font-weight:700;">
+                  <span>Change Given (ඉතිරි මුදල)</span>
+                  <span style="font-family:var(--mono);">Rs. ${fmtMoney(Number(sale.change_amount || 0))}</span>
+                </div>
+              ` : ''}
               <div>
                 <span class="payment-tag">Paid via ${esc(String(sale.payment_method || 'CASH').toUpperCase())}</span>
               </div>
