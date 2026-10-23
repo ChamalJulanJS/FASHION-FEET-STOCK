@@ -646,11 +646,6 @@ export function generateReceiptImageBase64(r: PosReceiptDetails): string {
     return '';
   }
 }
-  } catch (e) {
-    console.warn('Canvas receipt generation failed:', e);
-    return '';
-  }
-}
 
 export interface N8nPosBillPayload {
   event: 'pos_sale_completed';
